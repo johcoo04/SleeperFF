@@ -1,0 +1,16 @@
+{
+  "league_ids": {
+    "2025": "1234567890123456789",
+    "2024": "1124846364065288192",
+    "2023": "1004576507286630400"
+  },
+  "current_season": 2024,
+  "api": {
+    "base_url": "https://api.sleeper.app/v1",
+    "sport": "nfl"
+  },
+  "settings": {
+    "score_type": "pts_ppr",
+    "weeks_to_fetch": 17
+  }
+}
