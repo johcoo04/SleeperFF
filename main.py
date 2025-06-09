@@ -1,5 +1,7 @@
+import sys
 import requests
 import json
+
 def load_json(file_path):
     with open(file_path, 'r') as f:
         return json.load(f)
@@ -55,9 +57,9 @@ def main():
     rosters = rosters_response(league_id, base_url)
     users = users_response(league_id, base_url)
     matchups = matchup_response(league_id, base_url)
-    if rosters or users or matchups:
+    if not rosters or not users or not matchups:
         print("One or more API responses are empty. Please check the API endpoints.")
-    print("All API responses have been tested.")
+        sys.exit(1)  # Error Code return
 
 if __name__ == "__main__":
     main()
