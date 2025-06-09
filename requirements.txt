@@ -1,8 +1,2 @@
-# requirements.txt - Only direct dependencies
-requests>=2.22.0
-pandas>=2.0.0
-
-# Let pip/renovate handle:
-# - Indirect dependencies automatically
-# - Version ranges instead of exact pins
-# - Security updates through renovate bot
+requests
+pandas
