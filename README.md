@@ -1,1 +1,1 @@
-# OSMTampaMapping
+This project is used to scrape and call upon the Sleeper APIs to gather information and perform Data Analysis on my league's fantasy football results
