@@ -47,7 +47,6 @@ def matchup_response(league_id, base_url, max_week=17):
             print(f"Error fetching data from API: {e}")
     return all_scores
 
-
 def main():
     config_file = 'league_data.json'
     league_data = load_json(config_file)
@@ -60,6 +59,8 @@ def main():
     if not rosters or not users or not matchups:
         print("One or more API responses are empty. Please check the API endpoints.")
         sys.exit(1)  # Error Code return
+    
+    print("All API responses are successful. Proceeding with data processing.")
 
 if __name__ == "__main__":
     main()
