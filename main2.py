@@ -368,6 +368,7 @@ def export_multi_year_excel_with_rolling(combined_weekly_scores, team_mapping):
                 'Week': week,
                 'Team_Name': team_data['team_name'],
                 'Owner_Name': team_data['owner_name'],
+                'Username': team_data.get('username', team_data['owner_name']),
                 'Rolling_Average': round(rolling_avg, 2),
                 'Total_Points': round(total_points, 2),
                 'Weekly_Score': round(team_data['points'], 2)
@@ -534,7 +535,7 @@ def export_multi_year_excel_with_rolling(combined_weekly_scores, team_mapping):
         scoreboard_data = []
         team_scoreboard_totals = {}
         team_rolling_totals = {}  # Track rolling totals for standings (scoreboard points)
-        team_rank_totals = {}  # Track cumulative rank sums / counts to compute rolling average rank
+        team_rank_history = {}  # Track placement history for each team per season
 
         # Process each week to award scoreboard points
         for (season, week), data in sorted(week_averages.items()):
@@ -548,13 +549,14 @@ def export_multi_year_excel_with_rolling(combined_weekly_scores, team_mapping):
                         'score': record['Weekly_Score']
                     })
             
-            # Sort teams by score (highest to lowest)
+            # Sort teams by score (highest to lowest) to determine weekly rank
             week_teams.sort(key=lambda x: x['score'], reverse=True)
             
             # Award points and track rolling totals
             week_rolling_data = []
             
             for i, team in enumerate(week_teams):
+                weekly_placement = i + 1  # 1st place, 2nd place, etc.
                 points_awarded = 0
                 
                 if str(season) == '2025':
@@ -577,11 +579,6 @@ def export_multi_year_excel_with_rolling(combined_weekly_scores, team_mapping):
                 # Track totals keyed by stable username when available
                 team_key = team.get('owner_name')
                 # try to get username from team entry if present
-                # team['owner_name'] here is a display name; attempt to find username in seasons_combined_data entries
-                # We'll use owner display name as fallback key if username not present
-                # NOTE: weekly processing records in seasons_combined_data include Owner_Name and Team_Name; earlier we added Username into combined_weekly_scores
-                # We try to read username by matching team_name + owner_name in seasons_combined_data for the same week/season
-                # Fallback to owner display name if username cannot be found
                 team_username = None
                 for rec in seasons_combined_data[str(season)]:
                     if rec['Team_Name'] == team['team_name'] and rec['Owner_Name'] == team['owner_name'] and rec['Week'] == week:
@@ -605,39 +602,32 @@ def export_multi_year_excel_with_rolling(combined_weekly_scores, team_mapping):
                 if team_key not in team_rolling_totals:
                     team_rolling_totals[team_key] = 0
 
-                # Initialize rank tracking if needed
-                if team_key not in team_rank_totals:
-                    team_rank_totals[team_key] = {
-                        'sum_ranks': 0,
-                        'weeks_ranked': 0
-                    }
+                # Initialize rank history tracking per season
+                season_key = f"{team_key}_{season}"
+                if season_key not in team_rank_history:
+                    team_rank_history[season_key] = []
 
                 team_scoreboard_totals[team_key]['total_points'] += points_awarded
                 team_scoreboard_totals[team_key]['weeks_played'] += 1
                 team_rolling_totals[team_key] += points_awarded
 
-                # Update rank running totals (weekly rank is i+1)
-                team_rank_totals[team_key]['sum_ranks'] += (i + 1)
-                team_rank_totals[team_key]['weeks_ranked'] += 1
+                # Track this week's placement for rolling average calculation
+                team_rank_history[season_key].append(weekly_placement)
+                
+                # Calculate rolling average rank (average placement over all weeks played this season)
+                rolling_avg_rank = sum(team_rank_history[season_key]) / len(team_rank_history[season_key])
                 
                 # Season-specific totals (owner-keyed)
                 if str(season) not in team_scoreboard_totals[team_key]['season_totals']:
                     team_scoreboard_totals[team_key]['season_totals'][str(season)] = 0
                 team_scoreboard_totals[team_key]['season_totals'][str(season)] += points_awarded
                 
-                # Store data for ranking calculation (include owner as primary key)
-                # Compute rolling average rank up to this week for this owner
-                rank_info = team_rank_totals.get(team_key, {'sum_ranks': 0, 'weeks_ranked': 0})
-                rolling_avg_rank = 0
-                if rank_info['weeks_ranked'] > 0:
-                    rolling_avg_rank = rank_info['sum_ranks'] / rank_info['weeks_ranked']
-
                 week_rolling_data.append({
                     'owner_key': team_key,
                     'team_name': team['team_name'],
                     'owner_name': team['owner_name'],
                     'weekly_score': team['score'],
-                    'weekly_rank': i + 1,
+                    'weekly_rank': weekly_placement,
                     'points_awarded': points_awarded,
                     'rolling_total': team_rolling_totals[team_key],
                     'rolling_avg_rank': rolling_avg_rank
@@ -655,10 +645,9 @@ def export_multi_year_excel_with_rolling(combined_weekly_scores, team_mapping):
                     'Team_Name': team_data['team_name'],
                     'Owner_Name': team_data['owner_name'],
                     'Weekly_Score': round(team_data['weekly_score'], 2),
-                    'Weekly_Rank': team_data['weekly_rank'],
                     'Points_Awarded': team_data['points_awarded'],
-                    'Rolling_Total': team_data['rolling_total'],
-                    'Rolling_Average_Rank': round(team_data.get('rolling_avg_rank', 0), 3),
+                    'Weekly_Rank': team_data['weekly_rank'],
+                    'Rolling_Average_Rank': round(team_data['rolling_avg_rank'], 3),
                     'Current_Standing': standings_rank
                 })
         
@@ -707,7 +696,7 @@ def export_multi_year_excel_with_rolling(combined_weekly_scores, team_mapping):
     
     print(f"✅ Multi-year data with rolling averages exported to Excel: {filename}")
     total_records = sum(len(data) for data in seasons_combined_data.values())
-    print(f"� Total records: {total_records}")
+    print(f"📊 Total records: {total_records}")
     print(f"📋 Seasons included: {', '.join(sorted(seasons_combined_data.keys()))}")
     
     # Show summary by season
@@ -715,62 +704,6 @@ def export_multi_year_excel_with_rolling(combined_weekly_scores, team_mapping):
         season_records = len(seasons_combined_data[year])
         max_week = max(record['Week'] for record in seasons_combined_data[year])
         print(f"   {year}: {season_records} records, {max_week} weeks")
-    
-    return filename
-    """Export weekly scores to Excel format"""
-    try:
-        import pandas as pd
-    except ImportError:
-        print("pandas is required for Excel export. Installing...")
-        import subprocess
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "pandas", "openpyxl"])
-        import pandas as pd
-    
-    print("Preparing data for Excel export...")
-    
-    # Prepare data for Excel
-    excel_data = []
-    
-    for week, week_data in sorted(weekly_scores.items()):
-        for roster_id, team_data in week_data.items():
-            excel_data.append({
-                'Week': week,
-                'Team_Name': team_data['team_name'],
-                'Owner_Name': team_data['owner_name'],
-                'Points': round(team_data['points'], 2)
-            })
-    
-    # Create DataFrame
-    df = pd.DataFrame(excel_data)
-    
-    # Export to Excel
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"fantasy_weekly_scores_{timestamp}.xlsx"
-    
-    # Create Excel writer object
-    with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-        # Write main data
-        df.to_excel(writer, sheet_name='Weekly Scores', index=False)
-        
-        # Get the workbook and worksheet
-        workbook = writer.book
-        worksheet = writer.sheets['Weekly Scores']
-        
-        # Auto-adjust column widths
-        for column in worksheet.columns:
-            max_length = 0
-            column_letter = column[0].column_letter
-            for cell in column:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
-                except:
-                    pass
-            adjusted_width = min(max_length + 2, 50)
-            worksheet.column_dimensions[column_letter].width = adjusted_width
-    
-    print(f"✅ Data exported to Excel: {filename}")
-    print(f"📊 Total records: {len(excel_data)}")
     
     return filename
 
