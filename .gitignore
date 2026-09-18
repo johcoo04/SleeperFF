@@ -25,3 +25,9 @@ venv/
 # Project specific
 *.xlsx
 *.csv
+# Secrets / credentials — never commit these (repo is public)
+serviceAccountKey.json
+*serviceAccount*.json
+*-firebase-adminsdk-*.json
+*.pem
+*.p12

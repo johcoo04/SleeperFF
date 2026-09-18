@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>League HQ</title>
+
+<!-- Tailwind (utility classes for layout/spacing/responsive grid) -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Fonts: Teko = condensed scoreboard/stadium display face (Stadium theme only). Inter = body face for both themes. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Teko:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Charts: rolling metrics + league trends -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+
+<!-- Markdown rendering for commissioner blog posts -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+
+<style>
+  * { box-sizing: border-box; }
+
+  /* ---- Theme tokens: everything below reads these vars, so the two themes ---- */
+  /* ---- only need one set of markup, no duplicated per-theme HTML.         ---- */
+  body.theme-scoreboard{
+    --bg:#0a0d14; --panel:#121722; --panel-2:#171d2b; --line:#2a3244;
+    --accent:#ff6a1f; --accent2:#2f8fff; --red:#e5484d; --green:#3ddc84;
+    --text:#f5f1e8; --text-dim:#a9a294;
+    --radius:14px;
+    --accent-glow: rgba(255,106,31,0.45);
+    --accent2-glow: rgba(47,143,255,0.45);
+  }
+  body.theme-dashboard{
+    --bg:#0f172a; --panel:#111827; --panel-2:#1e293b; --line:#334155;
+    --accent:#38bdf8; --accent2:#818cf8; --red:#f87171; --green:#34d399;
+    --text:#e2e8f0; --text-dim:#94a3b8;
+    --radius:8px;
+    --accent-glow: transparent;
+    --accent2-glow: transparent;
+  }
+
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', system-ui, sans-serif;
+    min-height: 100vh;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  .theme-scoreboard .font-display{ font-family: 'Teko', sans-serif; letter-spacing: 0.02em; }
+  .theme-dashboard .font-display{ font-family: 'Inter', sans-serif; font-weight: 800; letter-spacing: -0.01em; }
+
+  .glow{ text-shadow: 0 0 6px var(--accent-glow), 0 0 22px var(--accent-glow); }
+  .glow2{ text-shadow: 0 0 6px var(--accent2-glow), 0 0 22px var(--accent2-glow); }
+
+  .panel{
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+
+  .tab-btn{
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    border-bottom: 3px solid transparent;
+    color: var(--text-dim);
+  }
+  .theme-scoreboard .tab-btn{ font-family: 'Teko', sans-serif; letter-spacing: 0.03em; font-size: 1.15rem; }
+  .tab-btn.active{ color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-panel{ display: none; }
+  .tab-panel.active{ display: block; }
+
+  table{ width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+  th, td{ padding: 0.55rem 0.75rem; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th{ color: var(--text-dim); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; background: var(--panel-2); }
+  tbody tr:hover{ background: rgba(255,255,255,0.03); }
+  .table-scroll{ overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--line); }
+  .table-scroll table{ border: none; }
+  .table-scroll .panel{ border: none; border-radius: 0; }
+
+  select, .select-like{
+    background: #0d1119; border: 1px solid var(--line); color: var(--text);
+    border-radius: 8px; padding: 0.45rem 0.7rem; font-size: 0.875rem;
+  }
+  select:focus{ outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .tap-btn{ transition: transform 0.08s ease, filter 0.15s ease; }
+  .tap-btn:active{ transform: scale(0.96); }
+
+  .badge{ display:inline-flex; align-items:center; gap:0.3rem; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.7rem; font-weight:600; }
+  .badge-win{ background: rgba(52,211,153,0.15); color: var(--green); }
+  .badge-loss{ background: rgba(248,113,113,0.15); color: var(--red); }
+  .badge-tie{ background: rgba(148,163,184,0.15); color: var(--text-dim); }
+
+  .prose-blog{ color: var(--text); line-height: 1.7; }
+  .prose-blog h1, .prose-blog h2, .prose-blog h3{ color: var(--accent); font-weight: 700; margin: 1.2em 0 0.5em; }
+  .prose-blog p{ margin: 0.8em 0; }
+  .prose-blog ul, .prose-blog ol{ margin: 0.8em 0 0.8em 1.4em; }
+  .prose-blog a{ color: var(--accent2); text-decoration: underline; }
+  .prose-blog code{ background: var(--panel-2); padding: 0.1em 0.4em; border-radius: 4px; font-size: 0.9em; }
+  .prose-blog blockquote{ border-left: 3px solid var(--line); padding-left: 1em; color: var(--text-dim); margin: 0.8em 0; }
+
+  ::-webkit-scrollbar{ width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb{ background: var(--line); border-radius: 8px; }
+
+  .skeleton{ background: linear-gradient(90deg, var(--panel) 25%, var(--panel-2) 50%, var(--panel) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 6px; }
+  @keyframes shimmer{ 0%{ background-position: 200% 0; } 100%{ background-position: -200% 0; } }
+</style>
+</head>
+<body class="theme-scoreboard pb-16">
+
+  <!-- ===================== HEADER ===================== -->
+  <header class="panel mx-3 mt-3 sm:mx-6 sm:mt-6 px-4 py-4 sm:px-8 sm:py-6">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 class="font-display glow text-4xl sm:text-5xl md:text-6xl leading-none" style="color:var(--accent)">LEAGUE HQ</h1>
+        <p class="text-xs sm:text-sm mt-1 tracking-wide uppercase" style="color:var(--text-dim)">Scoreboard Points · Career Stats · Weekly Recaps</p>
+      </div>
+      <button id="themeToggleBtn" title="Switch theme" aria-label="Switch theme"
+        class="tap-btn shrink-0 text-xs uppercase tracking-wider border rounded-md px-3 py-2"
+        style="border-color:var(--line); color:var(--text-dim)">
+        Switch to Dashboard Mode
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================== TABS ===================== -->
+  <nav class="mx-3 mt-4 sm:mx-6 flex gap-6 border-b px-1 overflow-x-auto" style="border-color:var(--line)">
+    <button data-tab="scoreboard" class="tab-btn active pb-2 pt-1 whitespace-nowrap">Scoreboard</button>
+    <button data-tab="career" class="tab-btn pb-2 pt-1 whitespace-nowrap">Career / Multi-Year</button>
+    <button data-tab="trends" class="tab-btn pb-2 pt-1 whitespace-nowrap">League Trends</button>
+    <button data-tab="blog" class="tab-btn pb-2 pt-1 whitespace-nowrap">Weekly Blog</button>
+  </nav>
+
+  <!-- ===================== TAB: SCOREBOARD ===================== -->
+  <section id="tab-scoreboard" class="tab-panel active mx-3 mt-4 sm:mx-6 space-y-4">
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide" style="color:var(--accent)">SEASON STANDINGS</h2>
+        <select id="seasonSelect" class="select-like"></select>
+      </div>
+      <div id="standingsTableWrap" class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th><th>Owner</th><th>Scoreboard Pts</th><th>Total PF</th><th>Rolling Avg</th><th>Last Week</th>
+            </tr>
+          </thead>
+          <tbody id="standingsBody"></tbody>
+        </table>
+      </div>
+      <p id="standingsEmptyMsg" class="text-sm text-center py-8 hidden" style="color:var(--text-dim)">No standings data yet for this season.</p>
+    </div>
+
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide" style="color:var(--accent)">WEEK BROWSER</h2>
+        <select id="weekSelect" class="select-like"></select>
+      </div>
+      <div id="weekSummary" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4"></div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Owner</th><th>Score</th><th>Rank</th><th>Pts Awarded</th><th>Opponent</th><th>H2H</th></tr>
+          </thead>
+          <tbody id="weekResultsBody"></tbody>
+        </table>
+      </div>
+      <p id="weekEmptyMsg" class="text-sm text-center py-8 hidden" style="color:var(--text-dim)">No results for this week yet.</p>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: CAREER / MULTI-YEAR ===================== -->
+  <section id="tab-career" class="tab-panel mx-3 mt-4 sm:mx-6 space-y-4">
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide mb-4" style="color:var(--accent)">ALL-TIME LEADERBOARD</h2>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Owner</th><th>Career Scoreboard Pts</th><th>Career Avg</th><th>Total PF</th><th>Weeks Played</th></tr>
+          </thead>
+          <tbody id="careerBody"></tbody>
+        </table>
+      </div>
+      <div class="mt-5" style="max-width:100%; height:260px;">
+        <canvas id="careerChart"></canvas>
+      </div>
+    </div>
+
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide mb-4" style="color:var(--accent)">HEAD-TO-HEAD</h2>
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <select id="h2hOwnerA" class="select-like"></select>
+        <span style="color:var(--text-dim)">vs</span>
+        <select id="h2hOwnerB" class="select-like"></select>
+      </div>
+      <div id="h2hResult" class="text-sm" style="color:var(--text-dim)">Pick two owners to see their lifetime record.</div>
+    </div>
+
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide mb-4" style="color:var(--accent)">OUTLIER RECORDS</h2>
+      <div id="outlierGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: LEAGUE TRENDS ===================== -->
+  <section id="tab-trends" class="tab-panel mx-3 mt-4 sm:mx-6 space-y-4">
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide mb-4" style="color:var(--accent)">LEAGUE SCORING TRENDS</h2>
+      <div style="max-width:100%; height:280px;">
+        <canvas id="trendsChart"></canvas>
+      </div>
+    </div>
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Season</th><th>Week</th><th>League Avg</th><th>High</th><th>Low</th><th>Spread</th></tr>
+          </thead>
+          <tbody id="trendsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: WEEKLY BLOG ===================== -->
+  <section id="tab-blog" class="tab-panel mx-3 mt-4 sm:mx-6 mb-6 space-y-4">
+    <div class="panel px-4 py-4 sm:px-8 sm:py-6">
+      <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide mb-3" style="color:var(--accent)">FEATURED RECAP</h2>
+      <div id="featuredBlog">
+        <p class="text-sm" style="color:var(--text-dim)">No featured post yet.</p>
+      </div>
+    </div>
+
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide" style="color:var(--accent)">ARCHIVE</h2>
+        <div class="flex gap-2">
+          <select id="blogSeasonFilter" class="select-like"><option value="">All seasons</option></select>
+          <select id="blogWeekFilter" class="select-like"><option value="">All weeks</option></select>
+        </div>
+      </div>
+      <div id="blogArchiveList" class="space-y-2"></div>
+      <p id="blogEmptyMsg" class="text-sm text-center py-8 hidden" style="color:var(--text-dim)">No archived posts match that filter.</p>
+    </div>
+  </section>
+
+  <!-- ===================== Blog post modal (archive item click) ===================== -->
+  <div id="blogModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.7)">
+    <div class="panel max-w-2xl w-full max-h-[85vh] overflow-y-auto px-5 py-5 sm:px-7 sm:py-6 relative">
+      <button id="blogModalClose" class="absolute top-3 right-3 text-sm" style="color:var(--text-dim)">✕ Close</button>
+      <div id="blogModalContent"></div>
+    </div>
+  </div>
+
+<script type="module">
+/* =========================================================================
+   LEAGUE HQ — read-only dashboard. All writes happen via sync_pipeline.py;
+   this page only ever reads from Firestore via onSnapshot.
+   ========================================================================= */
+
+// ---- Firebase (v10 modular SDK, via CDN) ----------------------------------
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, doc, collection, onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// TODO: fill in with your Firebase project's config (Project settings -> Your apps -> SDK setup).
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const SEASONS = ["2023", "2024", "2025"];
+
+// ---- element refs ----------------------------------------------------------
+const els = {
+  themeToggleBtn: document.getElementById('themeToggleBtn'),
+
+  seasonSelect: document.getElementById('seasonSelect'),
+  standingsBody: document.getElementById('standingsBody'),
+  standingsEmptyMsg: document.getElementById('standingsEmptyMsg'),
+
+  weekSelect: document.getElementById('weekSelect'),
+  weekSummary: document.getElementById('weekSummary'),
+  weekResultsBody: document.getElementById('weekResultsBody'),
+  weekEmptyMsg: document.getElementById('weekEmptyMsg'),
+
+  careerBody: document.getElementById('careerBody'),
+  careerChartCanvas: document.getElementById('careerChart'),
+  h2hOwnerA: document.getElementById('h2hOwnerA'),
+  h2hOwnerB: document.getElementById('h2hOwnerB'),
+  h2hResult: document.getElementById('h2hResult'),
+  outlierGrid: document.getElementById('outlierGrid'),
+
+  trendsChartCanvas: document.getElementById('trendsChart'),
+  trendsBody: document.getElementById('trendsBody'),
+
+  featuredBlog: document.getElementById('featuredBlog'),
+  blogSeasonFilter: document.getElementById('blogSeasonFilter'),
+  blogWeekFilter: document.getElementById('blogWeekFilter'),
+  blogArchiveList: document.getElementById('blogArchiveList'),
+  blogEmptyMsg: document.getElementById('blogEmptyMsg'),
+  blogModal: document.getElementById('blogModal'),
+  blogModalClose: document.getElementById('blogModalClose'),
+  blogModalContent: document.getElementById('blogModalContent'),
+};
+
+// ---- theme toggle ------------------------------------------------------
+els.themeToggleBtn.addEventListener('click', () => {
+  const isScoreboard = document.body.classList.contains('theme-scoreboard');
+  document.body.classList.toggle('theme-scoreboard', !isScoreboard);
+  document.body.classList.toggle('theme-dashboard', isScoreboard);
+  els.themeToggleBtn.textContent = isScoreboard ? 'Switch to Stadium Mode' : 'Switch to Dashboard Mode';
+  // Charts read theme colors at draw time, so redraw them on toggle.
+  renderCareerChart();
+  renderTrendsChart();
+});
+
+// ---- tabs ------------------------------------------------------------
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+  });
+});
+
+function themeColor(varName){
+  return getComputedStyle(document.body).getPropertyValue(varName).trim();
+}
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+// =========================================================================
+// SCOREBOARD TAB
+// =========================================================================
+let seasonDocs = {};       // { "2025": {year, weeks_completed, standings, weeks} }
+let currentSeason = SEASONS[SEASONS.length - 1];
+let currentWeek = null;
+
+SEASONS.forEach(year => {
+  const opt = document.createElement('option');
+  opt.value = year;
+  opt.textContent = year;
+  els.seasonSelect.appendChild(opt);
+});
+els.seasonSelect.value = currentSeason;
+
+els.seasonSelect.addEventListener('change', () => {
+  currentSeason = els.seasonSelect.value;
+  currentWeek = null; // reset week selection when season changes
+  renderStandings();
+  renderWeekBrowser();
+});
+
+els.weekSelect.addEventListener('change', () => {
+  currentWeek = els.weekSelect.value;
+  renderWeekBrowser();
+});
+
+function renderStandings(){
+  const doc = seasonDocs[currentSeason];
+  const standings = doc?.standings || [];
+  els.standingsBody.innerHTML = '';
+  els.standingsEmptyMsg.classList.toggle('hidden', standings.length > 0);
+
+  const sorted = [...standings].sort((a, b) => a.current_standing - b.current_standing);
+  sorted.forEach(s => {
+    const lastWeekNum = doc.weeks_completed;
+    const lastWeek = doc.weeks?.[String(lastWeekNum)];
+    const lastResult = lastWeek?.results?.find(r => r.owner_id === s.owner_id);
+    const lastWeekLabel = lastResult ? `#${lastResult.weekly_rank} · ${lastResult.weekly_score.toFixed(1)}pts` : '—';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>#${s.current_standing}</td>
+      <td>${escapeHtml(s.display_name || s.owner_id)}</td>
+      <td>${s.total_scoreboard_points}</td>
+      <td>${s.total_points_for.toFixed(2)}</td>
+      <td>${s.rolling_average_score.toFixed(2)}</td>
+      <td style="color:var(--text-dim)">${lastWeekLabel}</td>
+    `;
+    els.standingsBody.appendChild(tr);
+  });
+}
+
+function renderWeekBrowser(){
+  const doc = seasonDocs[currentSeason];
+  const weekKeys = doc ? Object.keys(doc.weeks || {}).sort((a, b) => Number(a) - Number(b)) : [];
+
+  els.weekSelect.innerHTML = '';
+  weekKeys.forEach(wk => {
+    const opt = document.createElement('option');
+    opt.value = wk;
+    opt.textContent = `Week ${wk}`;
+    els.weekSelect.appendChild(opt);
+  });
+
+  if(!currentWeek || !weekKeys.includes(currentWeek)){
+    currentWeek = weekKeys[weekKeys.length - 1] || null;
+  }
+  if(currentWeek) els.weekSelect.value = currentWeek;
+
+  const week = currentWeek ? doc.weeks[currentWeek] : null;
+  els.weekEmptyMsg.classList.toggle('hidden', !!week);
+  els.weekSummary.innerHTML = '';
+  els.weekResultsBody.innerHTML = '';
+  if(!week) return;
+
+  const summaryCard = (label, value, color) => `
+    <div class="panel px-4 py-3" style="border-color:var(--line)">
+      <div class="text-[11px] uppercase tracking-wider" style="color:var(--text-dim)">${label}</div>
+      <div class="font-display text-xl" style="color:${color || 'var(--text)'}">${value}</div>
+    </div>`;
+  els.weekSummary.innerHTML =
+    summaryCard('High Score', `${escapeHtml(week.high_score.owner)} · ${week.high_score.points.toFixed(1)}`, 'var(--green)') +
+    summaryCard('Low Score', `${escapeHtml(week.low_score.owner)} · ${week.low_score.points.toFixed(1)}`, 'var(--red)') +
+    summaryCard('League Avg / Spread', `${week.league_average.toFixed(1)} avg · ${week.spread.toFixed(1)} spread`);
+
+  const sortedResults = [...week.results].sort((a, b) => a.weekly_rank - b.weekly_rank);
+  sortedResults.forEach(r => {
+    let h2hBadge = '<span class="badge badge-tie">—</span>';
+    if(r.h2h_win === true) h2hBadge = '<span class="badge badge-win">W</span>';
+    else if(r.h2h_win === false) h2hBadge = '<span class="badge badge-loss">L</span>';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(r.team_name || r.display_name || r.owner_id)}</td>
+      <td>${r.weekly_score.toFixed(2)}</td>
+      <td>#${r.weekly_rank}</td>
+      <td style="color:var(--accent)">${r.points_awarded}</td>
+      <td style="color:var(--text-dim)">${escapeHtml(r.opponent_display_name || '—')}</td>
+      <td>${h2hBadge}</td>
+    `;
+    els.weekResultsBody.appendChild(tr);
+  });
+}
+
+SEASONS.forEach(year => {
+  onSnapshot(doc(db, 'seasons', year), (snap) => {
+    seasonDocs[year] = snap.exists() ? snap.data() : { year, weeks_completed: 0, standings: [], weeks: {} };
+    if(year === currentSeason){
+      renderStandings();
+      renderWeekBrowser();
+    }
+  }, (err) => console.error(`seasons/${year} sync failed`, err));
+});
+
+// =========================================================================
+// CAREER / MULTI-YEAR TAB
+// =========================================================================
+let careerData = { owners: [], h2h_matrix: {} };
+let careerChart = null;
+
+function renderCareerLeaderboard(){
+  const sorted = [...careerData.owners].sort((a, b) => b.career_scoreboard_points - a.career_scoreboard_points);
+  els.careerBody.innerHTML = '';
+  sorted.forEach((o, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>#${i + 1}</td>
+      <td>${escapeHtml(o.display_name || o.owner_id)}</td>
+      <td>${o.career_scoreboard_points}</td>
+      <td>${o.career_average_score.toFixed(2)}</td>
+      <td>${o.career_total_pf.toFixed(2)}</td>
+      <td>${o.weeks_played}</td>
+    `;
+    els.careerBody.appendChild(tr);
+  });
+}
+
+function renderCareerChart(){
+  if(!window.Chart) return;
+  const sorted = [...careerData.owners].sort((a, b) => b.career_average_score - a.career_average_score);
+  const labels = sorted.map(o => o.display_name || o.owner_id);
+  const values = sorted.map(o => o.career_average_score);
+
+  if(careerChart) careerChart.destroy();
+  careerChart = new Chart(els.careerChartCanvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Career Average Score',
+        data: values,
+        backgroundColor: themeColor('--accent') || '#ff6a1f',
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: themeColor('--text-dim') }, grid: { color: themeColor('--line') } },
+        y: { ticks: { color: themeColor('--text-dim') }, grid: { color: themeColor('--line') } },
+      },
+    },
+  });
+}
+
+function populateH2hSelectors(){
+  const options = careerData.owners
+    .map(o => `<option value="${escapeHtml(o.owner_id)}">${escapeHtml(o.display_name || o.owner_id)}</option>`)
+    .join('');
+  els.h2hOwnerA.innerHTML = options;
+  els.h2hOwnerB.innerHTML = options;
+  if(careerData.owners.length > 1){
+    els.h2hOwnerA.selectedIndex = 0;
+    els.h2hOwnerB.selectedIndex = 1;
+  }
+  renderH2h();
+}
+
+function renderH2h(){
+  const a = els.h2hOwnerA.value;
+  const b = els.h2hOwnerB.value;
+  if(!a || !b || a === b){
+    els.h2hResult.textContent = a && b && a === b ? 'Pick two different owners.' : 'Pick two owners to see their lifetime record.';
+    return;
+  }
+  const row = careerData.h2h_matrix[`${a}_vs_${b}`];
+  if(!row){
+    els.h2hResult.textContent = 'These two haven\'t played each other yet.';
+    return;
+  }
+  const ownerA = careerData.owners.find(o => o.owner_id === a);
+  const ownerB = careerData.owners.find(o => o.owner_id === b);
+  els.h2hResult.innerHTML = `
+    <div class="flex flex-wrap items-baseline gap-2">
+      <span class="font-display glow text-2xl" style="color:var(--accent)">${escapeHtml(ownerA?.display_name || a)}</span>
+      <span class="font-display text-2xl" style="color:var(--text-dim)">${row.wins}-${row.losses}${row.ties ? `-${row.ties}` : ''}</span>
+      <span class="font-display glow text-2xl" style="color:var(--accent)">${escapeHtml(ownerB?.display_name || b)}</span>
+    </div>
+    <div class="text-xs mt-1" style="color:var(--text-dim)">
+      Points for/against: ${row.points_for.toFixed(1)} — ${row.points_against.toFixed(1)}
+    </div>
+  `;
+}
+els.h2hOwnerA.addEventListener('change', renderH2h);
+els.h2hOwnerB.addEventListener('change', renderH2h);
+
+function renderOutliers(){
+  if(careerData.owners.length === 0){ els.outlierGrid.innerHTML = ''; return; }
+  const bestWeek = careerData.owners.reduce((best, o) =>
+    (!best || (o.best_single_week && o.best_single_week.points > best.points))
+      ? { ...o.best_single_week, owner: o.display_name || o.owner_id } : best, null);
+  const worstWeek = careerData.owners.reduce((worst, o) =>
+    (!worst || (o.worst_single_week && o.worst_single_week.points < worst.points))
+      ? { ...o.worst_single_week, owner: o.display_name || o.owner_id } : worst, null);
+  const biggestSwing = careerData.owners.reduce((swing, o) => {
+    const d = o.largest_week_differential;
+    if(!d) return swing;
+    if(!swing || Math.abs(d.delta) > Math.abs(swing.delta)) return { ...d, owner: o.display_name || o.owner_id };
+    return swing;
+  }, null);
+
+  const card = (label, body) => `
+    <div class="panel px-4 py-3" style="border-color:var(--line)">
+      <div class="text-[11px] uppercase tracking-wider mb-1" style="color:var(--text-dim)">${label}</div>
+      <div class="text-sm">${body}</div>
+    </div>`;
+
+  els.outlierGrid.innerHTML =
+    (bestWeek ? card('All-Time High Week', `${escapeHtml(bestWeek.owner)} — <span style="color:var(--green)">${bestWeek.points.toFixed(1)}</span> (${bestWeek.season} Wk ${bestWeek.week})`) : '') +
+    (worstWeek ? card('All-Time Low Week', `${escapeHtml(worstWeek.owner)} — <span style="color:var(--red)">${worstWeek.points.toFixed(1)}</span> (${worstWeek.season} Wk ${worstWeek.week})`) : '') +
+    (biggestSwing ? card('Biggest Week-to-Week Swing', `${escapeHtml(biggestSwing.owner)} — <span style="color:${biggestSwing.delta >= 0 ? 'var(--green)' : 'var(--red)'}">${biggestSwing.delta >= 0 ? '+' : ''}${biggestSwing.delta.toFixed(1)}</span> (${biggestSwing.season} Wk ${biggestSwing.from_week}→${biggestSwing.to_week})`) : '');
+}
+
+onSnapshot(doc(db, 'meta', 'career_summary'), (snap) => {
+  careerData = snap.exists() ? snap.data() : { owners: [], h2h_matrix: {} };
+  renderCareerLeaderboard();
+  renderCareerChart();
+  populateH2hSelectors();
+  renderOutliers();
+}, (err) => console.error('meta/career_summary sync failed', err));
+
+// =========================================================================
+// LEAGUE TRENDS TAB
+// =========================================================================
+let trendRows = [];
+let trendsChart = null;
+
+function renderTrendsTable(){
+  els.trendsBody.innerHTML = '';
+  trendRows.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.season}</td><td>${r.week}</td>
+      <td>${r.league_average.toFixed(1)}</td>
+      <td style="color:var(--green)">${r.high_score.toFixed(1)}</td>
+      <td style="color:var(--red)">${r.low_score.toFixed(1)}</td>
+      <td>${r.spread.toFixed(1)}</td>
+    `;
+    els.trendsBody.appendChild(tr);
+  });
+}
+
+function renderTrendsChart(){
+  if(!window.Chart) return;
+  const labels = trendRows.map(r => `${r.season} Wk${r.week}`);
+  if(trendsChart) trendsChart.destroy();
+  trendsChart = new Chart(els.trendsChartCanvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'League Avg', data: trendRows.map(r => r.league_average), borderColor: themeColor('--accent') || '#ff6a1f', backgroundColor: 'transparent', tension: 0.25 },
+        { label: 'High Score', data: trendRows.map(r => r.high_score), borderColor: themeColor('--green') || '#3ddc84', backgroundColor: 'transparent', tension: 0.25 },
+        { label: 'Low Score', data: trendRows.map(r => r.low_score), borderColor: themeColor('--red') || '#e5484d', backgroundColor: 'transparent', tension: 0.25 },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: themeColor('--text-dim') } } },
+      scales: {
+        x: { ticks: { color: themeColor('--text-dim'), maxRotation: 0, autoSkip: true }, grid: { color: themeColor('--line') } },
+        y: { ticks: { color: themeColor('--text-dim') }, grid: { color: themeColor('--line') } },
+      },
+    },
+  });
+}
+
+onSnapshot(doc(db, 'meta', 'league_trends'), (snap) => {
+  const data = snap.exists() ? snap.data() : { rows: [] };
+  trendRows = (data.rows || []).slice().sort((a, b) => (a.season - b.season) || (a.week - b.week));
+  renderTrendsTable();
+  renderTrendsChart();
+}, (err) => console.error('meta/league_trends sync failed', err));
+
+// =========================================================================
+// WEEKLY BLOG TAB
+// =========================================================================
+let blogPosts = []; // {id, title, season, week, content, author, created_at, is_current}
+
+function renderFeaturedBlog(){
+  const featured = blogPosts.find(p => p.is_current) || [...blogPosts].sort((a, b) => (b.created_at || 0) - (a.created_at || 0))[0];
+  if(!featured){
+    els.featuredBlog.innerHTML = `<p class="text-sm" style="color:var(--text-dim)">No featured post yet.</p>`;
+    return;
+  }
+  els.featuredBlog.innerHTML = `
+    <div class="mb-2">
+      <h3 class="font-display text-2xl" style="color:var(--text)">${escapeHtml(featured.title)}</h3>
+      <div class="text-xs mt-1" style="color:var(--text-dim)">
+        ${escapeHtml(featured.season)} · Week ${escapeHtml(String(featured.week))} · ${escapeHtml(featured.author || 'Commissioner')}
+      </div>
+    </div>
+    <div class="prose-blog">${window.marked ? marked.parse(featured.content || '') : escapeHtml(featured.content || '')}</div>
+  `;
+}
+
+function populateBlogFilters(){
+  const seasons = [...new Set(blogPosts.map(p => p.season))].sort();
+  const currentSeasonVal = els.blogSeasonFilter.value;
+  els.blogSeasonFilter.innerHTML = '<option value="">All seasons</option>' +
+    seasons.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+  els.blogSeasonFilter.value = seasons.includes(currentSeasonVal) ? currentSeasonVal : '';
+
+  const weeks = [...new Set(blogPosts.map(p => p.week))].sort((a, b) => a - b);
+  const currentWeekVal = els.blogWeekFilter.value;
+  els.blogWeekFilter.innerHTML = '<option value="">All weeks</option>' +
+    weeks.map(w => `<option value="${w}">Week ${w}</option>`).join('');
+  els.blogWeekFilter.value = weeks.map(String).includes(currentWeekVal) ? currentWeekVal : '';
+}
+
+function renderBlogArchive(){
+  const seasonFilter = els.blogSeasonFilter.value;
+  const weekFilter = els.blogWeekFilter.value;
+  const filtered = blogPosts
+    .filter(p => !seasonFilter || p.season === seasonFilter)
+    .filter(p => !weekFilter || String(p.week) === weekFilter)
+    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+
+  els.blogEmptyMsg.classList.toggle('hidden', filtered.length > 0);
+  els.blogArchiveList.innerHTML = '';
+  filtered.forEach(p => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'w-full text-left panel px-4 py-3 tap-btn';
+    row.style.borderColor = 'var(--line)';
+    row.innerHTML = `
+      <div class="flex items-center justify-between gap-3">
+        <span class="font-medium">${escapeHtml(p.title)}</span>
+        <span class="text-xs" style="color:var(--text-dim)">${escapeHtml(p.season)} · Wk ${escapeHtml(String(p.week))}</span>
+      </div>
+    `;
+    row.addEventListener('click', () => openBlogModal(p));
+    els.blogArchiveList.appendChild(row);
+  });
+}
+
+function openBlogModal(post){
+  els.blogModalContent.innerHTML = `
+    <h3 class="font-display text-2xl mb-1" style="color:var(--text)">${escapeHtml(post.title)}</h3>
+    <div class="text-xs mb-4" style="color:var(--text-dim)">
+      ${escapeHtml(post.season)} · Week ${escapeHtml(String(post.week))} · ${escapeHtml(post.author || 'Commissioner')}
+    </div>
+    <div class="prose-blog">${window.marked ? marked.parse(post.content || '') : escapeHtml(post.content || '')}</div>
+  `;
+  els.blogModal.classList.remove('hidden');
+}
+els.blogModalClose.addEventListener('click', () => els.blogModal.classList.add('hidden'));
+els.blogModal.addEventListener('click', (e) => { if(e.target === els.blogModal) els.blogModal.classList.add('hidden'); });
+
+els.blogSeasonFilter.addEventListener('change', renderBlogArchive);
+els.blogWeekFilter.addEventListener('change', renderBlogArchive);
+
+onSnapshot(collection(db, 'blogs'), (snapshot) => {
+  blogPosts = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  renderFeaturedBlog();
+  populateBlogFilters();
+  renderBlogArchive();
+}, (err) => console.error('blogs sync failed', err));
+</script>
+</body>
+</html>
