@@ -16,7 +16,7 @@ Earlier handoffs (v1, v2, v3) are in `archive/` for history.
 SleeperFF/
 ├── main.py                 # THE Excel pipeline. Corrected + verified against live data.
 ├── sync_pipeline.py        # Firestore pipeline. Corrected + verified via --dry-run; no Firebase project yet.
-├── league_hq.html          # Read-only dashboard for sync_pipeline.py's Firestore data.
+├── index.html          # Read-only dashboard for sync_pipeline.py's Firestore data.
 ├── league_data.json        # Config source of truth (league IDs per season, base_url, weeks_to_fetch).
 ├── requirements.txt        # requests, pandas, openpyxl, matplotlib, numpy (+ firebase-admin for sync_pipeline.py)
 ├── fantasy_multi_year_scores_*.xlsx   # Generated output. Gitignored (*.xlsx).
@@ -99,7 +99,7 @@ Where this is enforced:
   `display_name` / `opponent_display_name` for rendering), standings carry
   `owner_id`, career records are keyed by `owner_id`, and the H2H matrix keys
   are `{owner_id}_vs_{owner_id}`. No `username` field is written at all.
-- **`league_hq.html`** — matches rows by `owner_id` (standings ↔ last-week
+- **`index.html`** — matches rows by `owner_id` (standings ↔ last-week
   result, H2H selector values, career lookups) and only ever *renders* the
   names, falling back to `owner_id` if a name is missing.
 
@@ -132,7 +132,7 @@ fork), 30 directed H2H pairings with reciprocal rows mirroring correctly, and
 **Not verified:**
 - The tie-breaker path (no real ties exist — see Fix 2).
 - Any actual Firestore write. `sync_pipeline.py` has only ever run `--dry-run`.
-- `league_hq.html` rendering against live data, since nothing populates
+- `index.html` rendering against live data, since nothing populates
   Firestore yet.
 
 ---
@@ -143,13 +143,13 @@ Nothing blocks the Excel workflow — it works and has been run.
 
 **If you want the live dashboard:**
 1. Create a Firebase project, put its config into `firebaseConfig` in
-   `league_hq.html` (currently `YOUR_API_KEY` placeholders).
+   `index.html` (currently `YOUR_API_KEY` placeholders).
 2. Generate a service account key, save as `serviceAccountKey.json` (or set
    `FIREBASE_SERVICE_ACCOUNT` / pass `--credentials`).
 3. Add `firebase-admin` to `requirements.txt` — it's a real dependency of
    `sync_pipeline.py` and still missing from the file.
 4. Run `python sync_pipeline.py` (without `--dry-run`) to populate Firestore,
-   then open `league_hq.html`.
+   then open `index.html`.
 5. Firestore rules should be read-only for the browser, write-only via the
    pipeline's service account.
 6. The blog tab reads a `blogs` collection that nothing currently writes.

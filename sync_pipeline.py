@@ -3,7 +3,7 @@ Sleeper Fantasy League Sync Pipeline
 =====================================
 Fetches league data from the Sleeper API, computes the league's custom weekly
 Scoreboard Points, rolling averages, all-time head-to-head records and outlier
-stats, then upserts everything into Cloud Firestore for league_hq.html to read
+stats, then upserts everything into Cloud Firestore for index.html to read
 live via onSnapshot.
 
 All identity and scoring logic lives in league_core.py — this file owns only
