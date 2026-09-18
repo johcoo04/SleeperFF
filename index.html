@@ -290,7 +290,11 @@ const firebaseConfig = {
 
 const DATA_JSON_URL = "data/league.json";
 
-const SEASONS = ["2023", "2024", "2025"];
+// Fallback list, used only in Firestore mode (which must know the document
+// IDs up front). In static mode this is replaced by whatever seasons the
+// bundle actually contains, so adding a season is a league_data.json edit
+// alone -- no HTML change.
+let SEASONS = ["2023", "2024", "2025", "2026"];
 
 // ---- element refs ----------------------------------------------------------
 const els = {
@@ -364,13 +368,19 @@ let seasonDocs = {};       // { "2025": {year, weeks_completed, standings, weeks
 let currentSeason = SEASONS[SEASONS.length - 1];
 let currentWeek = null;
 
-SEASONS.forEach(year => {
-  const opt = document.createElement('option');
-  opt.value = year;
-  opt.textContent = year;
-  els.seasonSelect.appendChild(opt);
-});
-els.seasonSelect.value = currentSeason;
+function populateSeasonSelect(list){
+  SEASONS = list.slice().sort();
+  if(!SEASONS.includes(currentSeason)) currentSeason = SEASONS[SEASONS.length - 1];
+  els.seasonSelect.innerHTML = '';
+  SEASONS.forEach(year => {
+    const opt = document.createElement('option');
+    opt.value = year;
+    opt.textContent = year;
+    els.seasonSelect.appendChild(opt);
+  });
+  els.seasonSelect.value = currentSeason;
+}
+populateSeasonSelect(SEASONS);
 
 els.seasonSelect.addEventListener('change', () => {
   currentSeason = els.seasonSelect.value;
@@ -728,6 +738,10 @@ function renderAll(){
 
 function applyBundle(bundle){
   seasonDocs = bundle.seasons || {};
+  // Let the data decide which seasons exist, so a new season shows up without
+  // touching this file. Default the picker to the newest one present.
+  const present = Object.keys(seasonDocs);
+  if(present.length) populateSeasonSelect(present);
   // A season with no data still needs an object, or the standings/week
   // renderers would read through undefined.
   SEASONS.forEach(year => {

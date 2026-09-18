@@ -57,6 +57,15 @@ class TestTieBreakerAveraging(unittest.TestCase):
         self.assertAlmostEqual(sum(awarded), 7.0, places=2,
                               msg="a tie must not change the total points paid out")
 
+    def test_future_seasons_inherit_the_2025_rule_table(self):
+        """Only 2023/2024 use the old table; every later season is "2025+"."""
+        for season in ("2025", "2026", "2027", 2026):
+            points = core.points_for_rank_fn(season)
+            self.assertEqual([points(r) for r in range(1, 7)], [2, 2, 1, 1, 1, 0], season)
+        for season in ("2023", "2024", 2023):
+            points = core.points_for_rank_fn(season)
+            self.assertEqual([points(r) for r in range(1, 7)], [2, 2, 1, 1, 0, 0], season)
+
     def test_untied_week_pays_the_plain_rule_table(self):
         for season, expected in (("2023", [2, 2, 1, 1, 0, 0]), ("2025", [2, 2, 1, 1, 1, 0])):
             entries = [{"owner_id": f"o{i}", "score": float(100 - i)} for i in range(6)]
