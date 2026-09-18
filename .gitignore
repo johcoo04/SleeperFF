@@ -26,8 +26,13 @@ venv/
 *.xlsx
 *.csv
 # Secrets / credentials — never commit these (repo is public)
-serviceAccountKey.json
-*serviceAccount*.json
-*-firebase-adminsdk-*.json
+# Broad on purpose: the Google-generated key name is
+# <project>-firebase-adminsdk-<hash>.json, but any near-miss variant must be
+# caught too, so these match anywhere in the name and ignore the extension.
+*serviceAccount*
+*service-account*
+*firebase-adminsdk*
+*adminsdk*
 *.pem
 *.p12
+*.key

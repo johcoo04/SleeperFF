@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Read-only for the browser; every write is denied. sync_pipeline.py writes
+// through the Firebase Admin SDK, which bypasses these rules entirely, so the
+// pipeline keeps working with no write rule granted to anyone.
+//
+// Deploy:  firebase deploy --only firestore:rules
+// Or paste into: Firebase console -> Firestore Database -> Rules
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /seasons/{year} { allow read: if true; allow write: if false; }
+    match /meta/{doc}     { allow read: if true; allow write: if false; }
+    match /blogs/{post}   { allow read: if true; allow write: if false; }
+
+    // Anything not listed above is denied by default.
+  }
+}

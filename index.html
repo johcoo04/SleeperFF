@@ -266,14 +266,21 @@ import {
   getFirestore, doc, collection, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-// TODO: fill in with your Firebase project's config (Project settings -> Your apps -> SDK setup).
+// Firebase web config. A web apiKey is a public project identifier, not a
+// credential — it ships in client-side JS by design and is safe in a public
+// repo. Access is controlled by the Firestore rules in firestore.rules, which
+// allow reads and deny all writes; the pipeline writes via the Admin SDK,
+// which bypasses rules. Worth restricting this key in the Google Cloud console
+// (API restrictions + HTTP referrer allowlist) so it can't be reused
+// elsewhere against your project's quota.
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyB6TKqyZ1hPBk_5R4HVL2CL3Q4hmxBj97w",
+  authDomain: "sleeper-league-hq.firebaseapp.com",
+  projectId: "sleeper-league-hq",
+  storageBucket: "sleeper-league-hq.firebasestorage.app",
+  messagingSenderId: "829607138026",
+  appId: "1:829607138026:web:0d1f5294c5ba58d1aabd93",
+  measurementId: "G-SKX5GPZKGJ"
 };
 
 const app = initializeApp(firebaseConfig);
