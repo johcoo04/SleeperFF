@@ -10,10 +10,18 @@ All identity and scoring logic lives in league_core.py — this file owns only
 the Firestore document shaping and the write. See league_core.py for why owner
 identity is `owner_id` and never a name.
 
+Two sinks, either or both:
+    Firestore  -- live push updates via onSnapshot, reachable from anywhere.
+    Static JSON -- a single bundle the page can fetch(); no SDK, no keys.
+The dashboard prefers the JSON bundle when it's present and falls back to
+Firestore, so running both gives the Pi a local source with a cloud fallback.
+
 Usage:
-    python sync_pipeline.py                    # sync all configured seasons
-    python sync_pipeline.py --season 2025      # limit to one season
-    python sync_pipeline.py --dry-run          # compute + print, write nothing
+    python sync_pipeline.py                              # Firestore only
+    python sync_pipeline.py --json-out ./data            # Firestore + JSON
+    python sync_pipeline.py --json-out ./data --skip-firestore   # JSON only
+    python sync_pipeline.py --season 2025                 # one season
+    python sync_pipeline.py --dry-run                     # compute, write nothing
     python sync_pipeline.py --credentials path/to/key.json
 
 Requirements:
@@ -31,8 +39,10 @@ Setup:
 """
 
 import argparse
+import json
 import os
 import sys
+import time
 from collections import defaultdict
 
 import league_core as core
@@ -226,6 +236,35 @@ def build_career_and_trends(season_docs):
 
 
 # ---------------------------------------------------------------------------
+# Static JSON sink
+# ---------------------------------------------------------------------------
+
+def write_json_bundle(out_dir, season_docs, career_doc, league_trends, blogs=None):
+    """
+    Write the whole league as one ~113 KB file. A single bundle rather than a
+    file per document means the page does one request instead of five, and
+    can't render a half-updated league from a partially-fetched set.
+
+    Written to a temp file and renamed, because rename is atomic on POSIX —
+    a web server can never serve a half-written bundle mid-cron.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    bundle = {
+        "generated_at": int(time.time() * 1000),  # ms, so JS Date() takes it directly
+        "seasons": {str(season): doc for season, doc in season_docs.items()},
+        "career_summary": career_doc,
+        "league_trends": league_trends,
+        "blogs": blogs or [],
+    }
+    path = os.path.join(out_dir, "league.json")
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(bundle, f, separators=(",", ":"))
+    os.replace(tmp, path)
+    return path, os.path.getsize(path)
+
+
+# ---------------------------------------------------------------------------
 # Firestore
 # ---------------------------------------------------------------------------
 
@@ -281,7 +320,13 @@ def main():
     parser.add_argument("--credentials", default=DEFAULT_CREDENTIALS_PATH,
                         help="Path to the Firebase service account JSON key.")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Compute everything and print a summary, but don't write to Firestore.")
+                        help="Compute everything and print a summary, but write nothing anywhere.")
+    parser.add_argument("--json-out", metavar="DIR",
+                        help="Also write a static league.json bundle into DIR "
+                             "(e.g. the Pi's web root). The dashboard prefers this over Firestore.")
+    parser.add_argument("--skip-firestore", action="store_true",
+                        help="Don't write to Firestore. Use with --json-out for a "
+                             "Firebase-free deployment.")
     args = parser.parse_args()
 
     seasons_to_run = [args.season] if args.season else sorted(all_league_ids)
@@ -315,6 +360,10 @@ def main():
                       f"{team['total_scoreboard_points']:>5} pts  "
                       f"PF {team['total_points_for']:>8.2f}  "
                       f"avg {team['rolling_average_score']:>6.2f}")
+        if args.json_out:
+            print(f"Would write a static bundle to {os.path.join(args.json_out, 'league.json')}.")
+        if args.skip_firestore:
+            print("Would skip Firestore (--skip-firestore).")
         if partial_run:
             print(f"\nWould write: {len(season_docs)} season doc(s) only "
                   f"(career_summary and league_trends skipped for a --season run).")
@@ -323,6 +372,19 @@ def main():
                   f"career_summary ({len(career_doc['owners'])} owners, "
                   f"{len(career_doc['h2h_matrix'])} h2h pairings), "
                   f"league_trends ({len(league_trends)} rows).")
+        return
+
+    if args.json_out:
+        if partial_run:
+            print("REFUSING to write a partial JSON bundle: it would replace the whole "
+                  "league with one season. Run without --season to regenerate it.")
+        else:
+            path, size = write_json_bundle(args.json_out, season_docs, career_doc, league_trends)
+            print(f"Wrote {path} ({size / 1024:.1f} KB).")
+
+    if args.skip_firestore:
+        print("Skipped Firestore (--skip-firestore).")
+        print("\nSync complete.")
         return
 
     db = init_firestore(args.credentials)

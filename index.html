@@ -116,6 +116,7 @@
       <div>
         <h1 class="font-display glow text-4xl sm:text-5xl md:text-6xl leading-none" style="color:var(--accent)">LEAGUE HQ</h1>
         <p class="text-xs sm:text-sm mt-1 tracking-wide uppercase" style="color:var(--text-dim)">Scoreboard Points · Career Stats · Weekly Recaps</p>
+        <p id="dataSourceLabel" class="text-[11px] mt-1 tracking-wide uppercase" style="color:var(--text-dim)">loading…</p>
       </div>
       <button id="themeToggleBtn" title="Switch theme" aria-label="Switch theme"
         class="tap-btn shrink-0 text-xs uppercase tracking-wider border rounded-md px-3 py-2"
@@ -260,11 +261,15 @@
    this page only ever reads from Firestore via onSnapshot.
    ========================================================================= */
 
-// ---- Firebase (v10 modular SDK, via CDN) ----------------------------------
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-  getFirestore, doc, collection, onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+// ---- Data source ---------------------------------------------------------
+// Two sources, in preference order:
+//   1. data/league.json -- a static bundle written by sync_pipeline.py
+//      --json-out. Whole league is ~113 KB, so one fetch gets everything and
+//      the Firebase SDK is never even downloaded.
+//   2. Live Firestore via onSnapshot -- used only if the bundle is absent,
+//      and imported dynamically at that point.
+// This is what lets the same file work served off a Raspberry Pi or from a
+// host with no JSON alongside it.
 
 // Firebase web config. A web apiKey is a public project identifier, not a
 // credential — it ships in client-side JS by design and is safe in a public
@@ -283,14 +288,14 @@ const firebaseConfig = {
   measurementId: "G-SKX5GPZKGJ"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const DATA_JSON_URL = "data/league.json";
 
 const SEASONS = ["2023", "2024", "2025"];
 
 // ---- element refs ----------------------------------------------------------
 const els = {
   themeToggleBtn: document.getElementById('themeToggleBtn'),
+  dataSourceLabel: document.getElementById('dataSourceLabel'),
 
   seasonSelect: document.getElementById('seasonSelect'),
   standingsBody: document.getElementById('standingsBody'),
@@ -456,16 +461,6 @@ function renderWeekBrowser(){
   });
 }
 
-SEASONS.forEach(year => {
-  onSnapshot(doc(db, 'seasons', year), (snap) => {
-    seasonDocs[year] = snap.exists() ? snap.data() : { year, weeks_completed: 0, standings: [], weeks: {} };
-    if(year === currentSeason){
-      renderStandings();
-      renderWeekBrowser();
-    }
-  }, (err) => console.error(`seasons/${year} sync failed`, err));
-});
-
 // =========================================================================
 // CAREER / MULTI-YEAR TAB
 // =========================================================================
@@ -587,14 +582,6 @@ function renderOutliers(){
     (biggestSwing ? card('Biggest Week-to-Week Swing', `${escapeHtml(biggestSwing.owner)} — <span style="color:${biggestSwing.delta >= 0 ? 'var(--green)' : 'var(--red)'}">${biggestSwing.delta >= 0 ? '+' : ''}${biggestSwing.delta.toFixed(1)}</span> (${biggestSwing.season} Wk ${biggestSwing.from_week}→${biggestSwing.to_week})`) : '');
 }
 
-onSnapshot(doc(db, 'meta', 'career_summary'), (snap) => {
-  careerData = snap.exists() ? snap.data() : { owners: [], h2h_matrix: {} };
-  renderCareerLeaderboard();
-  renderCareerChart();
-  populateH2hSelectors();
-  renderOutliers();
-}, (err) => console.error('meta/career_summary sync failed', err));
-
 // =========================================================================
 // LEAGUE TRENDS TAB
 // =========================================================================
@@ -641,13 +628,6 @@ function renderTrendsChart(){
     },
   });
 }
-
-onSnapshot(doc(db, 'meta', 'league_trends'), (snap) => {
-  const data = snap.exists() ? snap.data() : { rows: [] };
-  trendRows = (data.rows || []).slice().sort((a, b) => (a.season - b.season) || (a.week - b.week));
-  renderTrendsTable();
-  renderTrendsChart();
-}, (err) => console.error('meta/league_trends sync failed', err));
 
 // =========================================================================
 // WEEKLY BLOG TAB
@@ -727,12 +707,103 @@ els.blogModal.addEventListener('click', (e) => { if(e.target === els.blogModal) 
 els.blogSeasonFilter.addEventListener('change', renderBlogArchive);
 els.blogWeekFilter.addEventListener('change', renderBlogArchive);
 
-onSnapshot(collection(db, 'blogs'), (snapshot) => {
-  blogPosts = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+// =========================================================================
+// BOOTSTRAP — pick a source, then render
+// =========================================================================
+function setSource(text){ els.dataSourceLabel.textContent = text; }
+
+function renderAll(){
+  renderStandings();
+  renderWeekBrowser();
+  renderCareerLeaderboard();
+  renderCareerChart();
+  populateH2hSelectors();
+  renderOutliers();
+  renderTrendsTable();
+  renderTrendsChart();
   renderFeaturedBlog();
   populateBlogFilters();
   renderBlogArchive();
-}, (err) => console.error('blogs sync failed', err));
+}
+
+function applyBundle(bundle){
+  seasonDocs = bundle.seasons || {};
+  // A season with no data still needs an object, or the standings/week
+  // renderers would read through undefined.
+  SEASONS.forEach(year => {
+    if(!seasonDocs[year]) seasonDocs[year] = { year, weeks_completed: 0, standings: [], weeks: {} };
+  });
+  careerData = bundle.career_summary || { owners: [], h2h_matrix: {} };
+  trendRows = (bundle.league_trends || []).slice()
+    .sort((a, b) => (a.season - b.season) || (a.week - b.week));
+  blogPosts = bundle.blogs || [];
+  renderAll();
+}
+
+async function subscribeFirestore(){
+  const [{ initializeApp }, { getFirestore, doc, collection, onSnapshot }] = await Promise.all([
+    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
+    import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"),
+  ]);
+  const db = getFirestore(initializeApp(firebaseConfig));
+
+  SEASONS.forEach(year => {
+    onSnapshot(doc(db, 'seasons', year), (snap) => {
+      seasonDocs[year] = snap.exists() ? snap.data() : { year, weeks_completed: 0, standings: [], weeks: {} };
+      if(year === currentSeason){
+        renderStandings();
+        renderWeekBrowser();
+      }
+    }, (err) => console.error(`seasons/${year} sync failed`, err));
+  });
+
+  onSnapshot(doc(db, 'meta', 'career_summary'), (snap) => {
+    careerData = snap.exists() ? snap.data() : { owners: [], h2h_matrix: {} };
+    renderCareerLeaderboard();
+    renderCareerChart();
+    populateH2hSelectors();
+    renderOutliers();
+  }, (err) => console.error('meta/career_summary sync failed', err));
+
+  onSnapshot(doc(db, 'meta', 'league_trends'), (snap) => {
+    const data = snap.exists() ? snap.data() : { rows: [] };
+    trendRows = (data.rows || []).slice().sort((a, b) => (a.season - b.season) || (a.week - b.week));
+    renderTrendsTable();
+    renderTrendsChart();
+  }, (err) => console.error('meta/league_trends sync failed', err));
+
+  onSnapshot(collection(db, 'blogs'), (snapshot) => {
+    blogPosts = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderFeaturedBlog();
+    populateBlogFilters();
+    renderBlogArchive();
+  }, (err) => console.error('blogs sync failed', err));
+}
+
+(async function bootstrap(){
+  try {
+    const res = await fetch(DATA_JSON_URL, { cache: 'no-store' });
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const bundle = await res.json();
+    applyBundle(bundle);
+    const synced = bundle.generated_at
+      ? new Date(bundle.generated_at).toLocaleString()
+      : 'unknown time';
+    setSource(`Static data · synced ${synced}`);
+    return;
+  } catch (err) {
+    console.info(`No ${DATA_JSON_URL} (${err.message}) — falling back to live Firestore.`);
+  }
+
+  setSource('Live Firestore · connecting…');
+  try {
+    await subscribeFirestore();
+    setSource('Live Firestore');
+  } catch (err) {
+    console.error('Firestore init failed', err);
+    setSource('No data source reachable — see console');
+  }
+})();
 </script>
 </body>
 </html>
