@@ -1,6 +1,13 @@
+# Base dependencies — every code path needs these and nothing more.
+#
+# Dependencies are split by what you actually intend to run, because the
+# optional extras are heavy on ARM and a Pi that only serves the dashboard
+# has no reason to build them:
+#
+#   pip install -r requirements.txt                 # sync to a static JSON bundle
+#   pip install -r requirements-firestore.txt       # + push to Cloud Firestore
+#   pip install -r requirements-excel.txt           # + generate the Excel archive
+#
+# The extras include this file, so each line above is self-contained.
+
 requests
-pandas
-openpyxl
-matplotlib
-numpy
-firebase-admin

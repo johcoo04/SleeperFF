@@ -225,7 +225,7 @@ def export_excel(seasons_rows, seasons_weeks):
     try:
         import pandas as pd
     except ImportError:
-        print("pandas is required for Excel export. Run: pip install -r requirements.txt")
+        print("pandas is required for Excel export. Run: pip install -r requirements-excel.txt")
         sys.exit(1)
 
     print("Preparing multi-year data with rolling averages for Excel export...")

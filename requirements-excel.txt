@@ -1,0 +1,6 @@
+# Excel archive (main.py) only. pandas pulls numpy, and both are slow to
+# build on ARM — this is why they are not in the base file.
+-r requirements.txt
+
+pandas
+openpyxl

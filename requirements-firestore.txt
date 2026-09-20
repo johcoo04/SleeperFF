@@ -1,0 +1,5 @@
+# Firestore sink for sync_pipeline.py. Not needed with --skip-firestore or
+# --dry-run, both of which run on the base dependencies alone.
+-r requirements.txt
+
+firebase-admin

@@ -15,17 +15,21 @@ cd /home/pi/SleeperFF
 python3 -m venv venv
 
 # Dashboard only (no Excel, no Firestore): one dependency.
-venv/bin/pip install requests
+venv/bin/pip install -r requirements.txt
 
 # Add these only if you want them:
-#   venv/bin/pip install firebase-admin        # keep the Firestore fallback
-#   venv/bin/pip install pandas openpyxl       # generate the Excel archive
+#   venv/bin/pip install -r requirements-firestore.txt   # keep the Firestore fallback
+#   venv/bin/pip install -r requirements-excel.txt       # generate the Excel archive
 ```
+
+The extras each include the base file, so whichever line you run is complete on
+its own. `requirements-excel.txt` is the only one that pulls `pandas`/`numpy`.
 
 ## 2. Keep the service account key outside the repo
 
 Only needed if you're keeping Firestore. `.gitignore` stops git, not `cp -r`,
-backups, or editor sync — so put it somewhere the repo can't reach:
+backups, or editor sync — so put it somewhere the repo can't reach. The dev
+machine follows the same rule and the same path, so the two don't drift:
 
 ```bash
 mkdir -p /home/pi/.config/sleeperff && chmod 700 /home/pi/.config/sleeperff

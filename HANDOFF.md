@@ -40,6 +40,7 @@ legitimately differs.
 | `test_league_core.py` | 24 tests, no network. `python -m unittest test_league_core` |
 | `league_data.json` | The only place league IDs live. |
 | `firestore.rules` | Read-only for browsers; all writes denied. |
+| `requirements*.txt` | Split by intent: base (`requests`), `-firestore`, `-excel`. |
 | `DEPLOY.md` | Raspberry Pi deployment procedure. |
 | `archive/` | Superseded `main.py`/`main2.py`, handoffs v1-v4, pre-fix xlsx. |
 
@@ -55,6 +56,23 @@ python sync_pipeline.py --dry-run                  # compute, write nothing
 
 `--season` refuses to write a JSON bundle: the bundle is whole-league, so a
 single season would replace all of it.
+
+### Credentials
+
+The service account key is **not in the repo** on any machine. It lives at
+`~/.config/sleeperff/serviceAccountKey.json` (dir `700`, file `600`), and the
+pipeline finds it through the environment:
+
+```bash
+export FIREBASE_SERVICE_ACCOUNT=~/.config/sleeperff/serviceAccountKey.json
+```
+
+Without that variable `sync_pipeline.py` looks for `serviceAccountKey.json`
+next to itself, finds nothing, and exits with a message telling you so — it
+never writes to Firestore unauthenticated. `--dry-run`, `--skip-firestore`,
+and JSON-only runs need no key at all. `.gitignore` covers the key by name,
+but gitignore only stops git; keeping the file outside the repo is what stops
+`cp -r`, backups, and editor sync.
 
 ---
 
@@ -147,8 +165,9 @@ standings.
 4 seasons / 52 weeks / 6 owners. Entire league history is ~108 KB of JSON;
 the page is ~36 KB. Growth is ~38 KB/season. Resources are not a constraint
 on any Pi. `pandas`/`numpy` are the only heavy ARM dependencies and are used
-**only** by `main.py` — a Pi that just serves the dashboard needs `requests`
-alone (plus `firebase-admin` if keeping the Firestore fallback).
+**only** by `main.py`, which is why they sit in `requirements-excel.txt` rather
+than the base file — a Pi that just serves the dashboard installs `requests`
+alone (add `requirements-firestore.txt` if keeping the Firestore fallback).
 
 As of 2026-09-20 the live NFL state is season 2026 week 2, so week 1 is the
 only completed 2026 week. There is nothing new to sync until the NFL rolls to

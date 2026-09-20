@@ -25,8 +25,11 @@ Usage:
     python sync_pipeline.py --credentials path/to/key.json
 
 Requirements:
-    pip install -r requirements.txt   (firebase-admin is only needed for a
-                                       real write; --dry-run works without it)
+    pip install -r requirements.txt             # requests only; enough for
+                                                # --json-out, --skip-firestore
+                                                # and --dry-run
+    pip install -r requirements-firestore.txt   # adds firebase-admin, needed
+                                                # only for a real Firestore write
 
 Setup:
     1. In the Firebase console: Project Settings -> Service Accounts ->
@@ -277,7 +280,7 @@ def init_firestore(credentials_path):
         import firebase_admin
         from firebase_admin import credentials, firestore
     except ImportError:
-        print("ERROR: firebase-admin is not installed. Run: pip install -r requirements.txt")
+        print("ERROR: firebase-admin is not installed. Run: pip install -r requirements-firestore.txt")
         print("(or use --dry-run, which needs no Firebase dependency)")
         sys.exit(1)
 
@@ -421,7 +424,7 @@ if __name__ == "__main__":
 #       - uses: actions/setup-python@v5
 #         with:
 #           python-version: "3.11"
-#       - run: pip install -r requirements.txt
+#       - run: pip install -r requirements-firestore.txt
 #       - run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' > serviceAccountKey.json
 #       - run: python sync_pipeline.py
 #       - if: always()
