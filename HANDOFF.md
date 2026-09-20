@@ -1,167 +1,187 @@
-# Fantasy League HQ — Current State (v4)
+# Fantasy League HQ — Current State (v5)
 
-**This replaces the v3 handoff.** v3 was written as a handoff *into* a Claude
-Code session, listing "run it against the real Sleeper API" as the open step.
-That session has now happened: the API was reachable, both pipelines were run
-for real against all three seasons, and the results were verified. This doc
-describes where things actually stand, not what to do next.
+Last updated 2026-09-20. Replaces v4. Earlier handoffs are in `archive/`.
 
-Earlier handoffs (v1, v2, v3) are in `archive/` for history.
+v4 described an Excel-only pipeline whose Firestore track was optional and
+unbuilt. That's no longer the shape of the project: the scoring logic has been
+consolidated into one module, four seasons are live in Firestore *and* in a
+static JSON bundle, and the dashboard reads from either. What's left is
+deployment and one product decision.
 
 ---
 
-## 1. File layout (as it actually is on disk)
+## 1. Architecture
 
 ```
-SleeperFF/
-├── main.py                 # THE Excel pipeline. Corrected + verified against live data.
-├── sync_pipeline.py        # Firestore pipeline. Corrected + verified via --dry-run; no Firebase project yet.
-├── index.html          # Read-only dashboard for sync_pipeline.py's Firestore data.
-├── league_data.json        # Config source of truth (league IDs per season, base_url, weeks_to_fetch).
-├── requirements.txt        # requests, pandas, openpyxl, matplotlib, numpy (+ firebase-admin for sync_pipeline.py)
-├── fantasy_multi_year_scores_*.xlsx   # Generated output. Gitignored (*.xlsx).
-├── 2 Types of Databases.sql           # Unrelated personal notes.
-├── CHANGELOG.md / CONTRIBUTORS.md     # Stubs.
-└── archive/                # Old buggy main.py + main2.py, handoffs v1-v3, pre-bugfix xlsx.
+league_data.json          config: 4 league IDs, base_url, weeks_to_fetch
+        |
+league_core.py            THE rules: fetch, owner identity, ranking,
+        |                 tie-breaks, live-week capping
+        +-- main.py           -> 10-sheet Excel workbook (archive)
+        +-- sync_pipeline.py  -> Firestore documents and/or static league.json
+                    |
+              index.html      prefers data/league.json, falls back to Firestore
 ```
 
-**Note on naming, because v3 got this backwards:** the corrected pipeline is
-`main.py` at the root. The old buggy `main.py` *and* `main2.py` are both in
-`archive/`. There is no `main2.py` at the root anymore. v3's instruction to
-"replace `main2.py`, delete `main.py`" would have deleted the good file.
+`league_core.py` exists because `main.py` and `sync_pipeline.py` previously
+carried independent copies of the same scoring rules — every fix had to land
+twice. Core now owns anything answering "who is this owner?" or "how is a week
+scored?"; the two entry points own only their output shaping, which
+legitimately differs.
+
+### Files
+
+| File | Role |
+|---|---|
+| `league_core.py` | Shared rules. Change scoring here and nowhere else. |
+| `main.py` | Excel archive. `python main.py` |
+| `sync_pipeline.py` | Firestore + JSON sinks. See flags below. |
+| `index.html` | Dashboard. Dual-source, no build step. |
+| `test_league_core.py` | 24 tests, no network. `python -m unittest test_league_core` |
+| `league_data.json` | The only place league IDs live. |
+| `firestore.rules` | Read-only for browsers; all writes denied. |
+| `DEPLOY.md` | Raspberry Pi deployment procedure. |
+| `archive/` | Superseded `main.py`/`main2.py`, handoffs v1-v4, pre-fix xlsx. |
+
+### sync_pipeline.py flags
+
+```
+python sync_pipeline.py                            # Firestore only
+python sync_pipeline.py --json-out ./data          # Firestore + static bundle
+python sync_pipeline.py --json-out ./data --skip-firestore   # no Firebase at all
+python sync_pipeline.py --season 2026              # one season (Firestore only)
+python sync_pipeline.py --dry-run                  # compute, write nothing
+```
+
+`--season` refuses to write a JSON bundle: the bundle is whole-league, so a
+single season would replace all of it.
 
 ---
 
-## 2. The three original fixes — now confirmed against real data
+## 2. The owner identity rule (most important thing in this repo)
 
-All three landed in both `main.py` and `sync_pipeline.py`.
+**`owner_id` is the canonical identity. Nothing may key on a name — not a
+dict key, not a lookup, not a join field.** Two independent reasons, both
+confirmed against live data:
 
-### Fix 1 — Owner identity is `owner_id`, never a name
-Sleeper returns **no `username` for any of the 6 owners** in any of the three
-seasons (re-confirmed against the live API: 0 of 6, every season). The old
-code's `user.get('username', 'Unknown')` defaulted everyone to the literal
-string `"Unknown"` and then used it as a dict key, collapsing every owner into
-one garbage row.
+1. Sleeper returns **no `username` for any of the 6 owners**, in any season.
+   The original code defaulted them all to the literal string `"Unknown"` and
+   used it as a key, collapsing all six into one garbage row.
+2. **One owner renamed themselves** — `SillyG00SE69` in 2023, `SillyG00SE13`
+   in 2024+ (owner_id `1004588088431058944`). A name key forks their career
+   into two partial owners.
 
-Every aggregation now keys off `owner_id` (Sleeper's internal `user_id`).
-**Confirmed in the real output:** Owner Summary and Scoreboard Summary each
-have 6 rows, and their grand total reconciles exactly against the Career sheet
-(46,203.48 both ways).
+Display names follow the latest season seen, so a renamed owner shows their
+current name while accumulating under one ID.
 
-This turned out to matter for a second reason v3 didn't know about: **one owner
-renamed themselves between seasons** — `SillyG00SE69` in 2023, `SillyG00SE13`
-in 2024-25 (owner_id `1004588088431058944`). Keying on `owner_id` correctly
-merges all 51 weeks into one career record (2,656.16 + 5,091.50 = 7,747.66 PF).
-Any name-based key would have forked them into two partial owners. Because of
-this, **nothing may key on a display name anywhere** — see section 3.
-
-### Fix 2 — Real tie-breaker averaging
-`rank_week_with_ties()` does competition ranking (ties share a rank; the next
-distinct score jumps by the tie count, e.g. 1, 2, 2, 4), and
-`averaged_points_for_tied_group()` splits the average of what each tied rank
-would individually pay.
-
-**Status: correct but unexercised by real data.** There are zero tied weekly
-scores across all 51 weeks of all three seasons, so this path never fires in
-production. It is verified only by synthetic tests. The six-way tie at 0.0 in
-2025 Week 16 that originally motivated this fix no longer exists — that week
-now returns real scores (233.4 / 164.2 / 162.4 / 157.9 / 149.1 / 142.6); the
-zeros were a mid-season snapshot artifact.
-
-### Fix 3 — Live-week capping (currently dormant)
-`determine_effective_max_week()` asks `/state/nfl` what week it is and, for the
-season matching that live state only, treats weeks strictly before the current
-one as complete. Past seasons are fetched in full. Network failure falls back
-to the requested week count.
-
-**Status: correct but dormant.** Live state is now **season 2026, week 2**, and
-`league_data.json` only configures 2023-2025 — so no configured season matches
-the live season and all three are fetched in full as past seasons. The capping
-logic will start doing work again the moment a `"2026"` league ID is added to
-`league_data.json`.
+This deliberately deviates from the original spec, which says to key on
+`username` (§5.2) and shows `"user1_vs_user2"` H2H keys (§4). The live data
+disproves the spec. Firestore stores `owner_id`, `opponent_owner_id`, and
+`{owner_id}_vs_{owner_id}`, with `display_name` alongside for rendering.
 
 ---
 
-## 3. Owner identity rule (applies to all three files)
+## 3. Scoring rules
 
-`owner_id` is the canonical identity. Display names are cosmetic and **must
-never be used as a key, a lookup, or a join field** — an owner has already
-renamed themselves once, and a rename must not fork their history or break the
-match between a Firestore document and the owner it describes.
+Points are awarded by weekly rank across the whole league, not by matchup:
 
-Where this is enforced:
-- **`main.py`** — aggregates on `owner_key` (= `owner_id`). `Owner_Name` and
-  `Team_Name` are display columns that follow the latest season seen, so
-  Owner Summary and Scoreboard Summary show the same current name for a
-  renamed owner.
-- **`sync_pipeline.py`** — every document written to Firestore carries
-  `owner_id`. Week results carry `owner_id` / `opponent_owner_id` (plus
-  `display_name` / `opponent_display_name` for rendering), standings carry
-  `owner_id`, career records are keyed by `owner_id`, and the H2H matrix keys
-  are `{owner_id}_vs_{owner_id}`. No `username` field is written at all.
-- **`index.html`** — matches rows by `owner_id` (standings ↔ last-week
-  result, H2H selector values, career lookups) and only ever *renders* the
-  names, falling back to `owner_id` if a name is missing.
+- **2023-2024:** ranks 1-2 = 2 pts, 3-4 = 1 pt, 5-6 = 0 → 6 pts/week
+- **2025+:** ranks 1-2 = 2 pts, 3-5 = 1 pt, 6 = 0 → 7 pts/week
+
+Ties use competition ranking (1, 2, 2, 4) and a tied group splits the average
+of what its ranks would each pay. **There has never been a tie in 52 weeks of
+league history**, so that path is covered by synthetic tests only and has no
+real-data evidence. Nothing to do about it but wait for one.
+
+Head-to-head records are tracked and displayed but deliberately do not affect
+standings.
 
 ---
 
-## 4. What's been verified, and how
+## 4. Bugs found and fixed (all verified against live data)
 
-**`main.py` — run for real against the live Sleeper API.** Current output:
-`fantasy_multi_year_scores_20260917_213930.xlsx`. All 9 sheets present with
-expected shapes: Career 306 rows, 2023/2024/2025 102 each, League Averages 51,
-Week MinMax 51, Owner Summary 6, Scoreboard 306, Scoreboard Summary 6.
-- Owner Summary / Scoreboard Summary: 6 rows, not the old 1-row collapse.
-- Totals reconcile: Career sum 46,203.48 = Owner Summary sum 46,203.48.
-- Zero rows with a 0.0 score; no all-zero weeks anywhere (no phantom weeks).
-- Scoreboard Points per week match the rule tables exactly: 6/week in 2023-24
-  (2+2+1+1+0+0 across 6 teams) and 7/week in 2025 (2+2+1+1+1+0).
-
-**`sync_pipeline.py` — run for real in `--dry-run`** (computes everything,
-writes nothing). 17 weeks and 6 teams in standings for each season. Its
-per-season Scoreboard Points totals match `main.py`'s Excel output exactly
-(jackcoon04 18/21/28, Gatorsby90 19/23/20, SillyG00SE 19/21/16, Doodlebahb
-23/13/20, xSgtMelonx 16/16/15, gatorjoe15 7/8/20) — two independent
-implementations agreeing on the scoring math.
-
-Career/H2H documents were also built from live data and inspected directly:
-6 owners keyed by numeric Sleeper IDs, all 6 with the full 51 weeks (no rename
-fork), 30 directed H2H pairings with reciprocal rows mirroring correctly, and
-51 league-trend rows.
-
-**Not verified:**
-- The tie-breaker path (no real ties exist — see Fix 2).
-- Any actual Firestore write. `sync_pipeline.py` has only ever run `--dry-run`.
-- `index.html` rendering against live data, since nothing populates
-  Firestore yet.
+- **Phantom head-to-head games.** Weeks 15 and 17 of *every* season have
+  exactly two rosters with a null `matchup_id` (playoff byes). The old
+  grouping paired those two as each other's opponent, inventing 6 fake H2H
+  results across league history. Now null matchup_ids are skipped, and H2H
+  reconciles exactly: 45 fully-paired weeks x3 + 6 playoff weeks x2 = 147
+  games, with all 30 directed pairings mirroring correctly.
+- **Owner collapse / rename fork** — see section 2.
+- **Frozen owner name** in Scoreboard Summary (showed the 2023 name while
+  Owner Summary showed the current one).
+- **Duplicated league IDs** — `sync_pipeline.py` had a hardcoded list separate
+  from `league_data.json`, so adding a season could update one pipeline only.
+- **Hardcoded season list** in `index.html`. Now data-driven: in static mode
+  the page uses whatever seasons the bundle contains, so adding 2027 is a
+  `league_data.json` edit alone.
+- **Credential gitignore gap** — `serviceAccountKey.json` wasn't ignored at
+  all, and the later `*-firebase-adminsdk-*.json` pattern matched Google's
+  filename only by luck. Patterns now match anywhere in the name, any
+  extension. Verified no key file exists anywhere in git history.
 
 ---
 
-## 5. What's left (all optional)
+## 5. What's verified
 
-Nothing blocks the Excel workflow — it works and has been run.
+- **Both pipelines run for real** against the live Sleeper API, all 4 seasons.
+- **Excel and Firestore/JSON agree owner-for-owner** on Scoreboard Points and
+  points-for — two independent shapings of one core.
+- **Firestore documents read back and validated field-by-field** against what
+  `index.html` actually dereferences, including non-null on every field it
+  calls `.toFixed()` on (a null there blanks a tab).
+- **Live-week capping is now active.** Live state is 2026 week 2, so 2026 is
+  capped to week 1 complete while 2023-2025 fetch in full. This was dormant
+  until 2026 was added.
+- **24 unit tests**, no network required.
 
-**If you want the live dashboard:**
-1. Create a Firebase project, put its config into `firebaseConfig` in
-   `index.html` (currently `YOUR_API_KEY` placeholders).
-2. Generate a service account key, save as `serviceAccountKey.json` (or set
-   `FIREBASE_SERVICE_ACCOUNT` / pass `--credentials`).
-3. Add `firebase-admin` to `requirements.txt` — it's a real dependency of
-   `sync_pipeline.py` and still missing from the file.
-4. Run `python sync_pipeline.py` (without `--dry-run`) to populate Firestore,
-   then open `index.html`.
-5. Firestore rules should be read-only for the browser, write-only via the
-   pipeline's service account.
-6. The blog tab reads a `blogs` collection that nothing currently writes.
+### Not verified
+- The tie-breaker path (no real ties exist).
+- `index.html` rendering — the first browser load happened and "looks good",
+  but no systematic pass over every tab.
+- Any Pi deployment.
 
-**Smaller loose ends:**
-- Adding a `"2026"` league ID to `league_data.json` re-activates Fix 3 and is
-  what you'd do to track the current season.
-- `main.py` and `sync_pipeline.py` still contain two separate implementations
-  of the same ranking/scoring rules. They currently agree exactly (verified
-  above), but they'll drift. Porting one onto the other is the long-term fix.
-- The `--full` flag on `sync_pipeline.py` is documented as mostly intent —
-  every run already recomputes the whole season.
-- `sync_pipeline.py` breaks out of its week loop when `compute_week_results`
-  returns `None`, with a stale comment about Sleeper returning `[]` for
-  unplayed weeks. Harmless given Fix 3, but the comment contradicts it.
+---
+
+## 6. Current data
+
+4 seasons / 52 weeks / 6 owners. Entire league history is ~108 KB of JSON;
+the page is ~36 KB. Growth is ~38 KB/season. Resources are not a constraint
+on any Pi. `pandas`/`numpy` are the only heavy ARM dependencies and are used
+**only** by `main.py` — a Pi that just serves the dashboard needs `requests`
+alone (plus `firebase-admin` if keeping the Firestore fallback).
+
+As of 2026-09-20 the live NFL state is season 2026 week 2, so week 1 is the
+only completed 2026 week. There is nothing new to sync until the NFL rolls to
+week 3.
+
+---
+
+## 7. Open items
+
+1. **Port to the Raspberry Pi.** Full procedure in `DEPLOY.md`: nginx, weekly
+   cron running `--json-out /var/www/leaguehq/data`, service account key moved
+   to `~/.config/sleeperff/` (outside the repo), and **Cloudflare Tunnel** for
+   outside access — league members are on other networks, and a tunnel needs
+   no port forwarding and doesn't expose the home IP.
+2. **Blog authoring — the last real gap.** Nothing writes blog posts, so that
+   tab renders "No featured post yet." Decision needed: markdown files in a
+   folder the pipeline bundles, vs. hand-writing documents in the Firebase
+   console. Nothing else is blocked on this.
+3. **Merge to `main`.** All work is on `fix/owner-id-keying-and-live-verification`,
+   pushed to GitHub. `main` is untouched.
+4. **Decide whether the Pi keeps writing Firestore.** Keeping both means a
+   viewer still sees data when the Pi is down, at the cost of the service
+   account key living on the Pi. `--skip-firestore` drops the key entirely.
+5. **2027 and beyond:** add the league ID to `league_data.json`. Nothing else
+   needs to change — season list, rule table, and week capping all follow.
+
+---
+
+## 8. Environment gotcha
+
+Claude Code runs inside **Warp** (`dev.warp.Warp-Stable`). macOS TCC gates
+`~/Documents`, and an OS or app update can silently revoke it, after which
+every file operation fails with `Operation not permitted` even though the
+files are fine. Fix: System Settings -> Privacy & Security -> Files and
+Folders -> Warp -> enable Documents Folder, then fully quit (Cmd-Q) and
+relaunch Warp. `claude --resume` returns to the session.
