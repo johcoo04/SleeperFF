@@ -157,6 +157,8 @@ standings.
   capped to week 1 complete while 2023-2025 fetch in full. This was dormant
   until 2026 was added.
 - **52 unit tests** (24 league + 28 blog), no network required.
+- **Live Firestore rules match `firestore.rules`** (read from the console
+  2026-09-20): public read, all writes denied.
 - **The blog pipeline end to end**: a post in `blogs/` parses, lands in
   `league.json`, and carries every field `index.html` dereferences.
 
@@ -256,10 +258,13 @@ now made and item 2 is built, so what's left is mostly deployment.
    client identifier and is safe in a public repo, but unrestricted it can be
    reused against this project's quota. Flagged in the code comment since day
    one, never done.
-5. **Confirm `firestore.rules` is actually deployed.** The file is versioned
-   here, but nothing records whether `firebase deploy --only firestore:rules`
-   has been run against the live project. If it hasn't, the project may still
-   be on default rules.
+5. ~~Confirm `firestore.rules` is deployed.~~ **Done 2026-09-20.** The live
+   rules were read out of the Firebase console and match this repo's
+   `firestore.rules` exactly: public read on `seasons`/`meta`/`blogs`, every
+   write denied, not test mode. Re-check after any console edit — there is no
+   CLI on this machine, so changes here don't auto-deploy. Publishing is a
+   paste into the console, or `npx firebase-tools deploy --only
+   firestore:rules` after a login.
 6. **Set `FIREBASE_SERVICE_ACCOUNT` in your shell profile** on the dev machine,
    or Firestore writes fail with a "key not found" exit. See §1 Credentials.
 
