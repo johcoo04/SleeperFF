@@ -10,6 +10,9 @@ All identity and scoring logic lives in league_core.py — this file owns only
 the Firestore document shaping and the write. See league_core.py for why owner
 identity is `owner_id` and never a name.
 
+Blog posts are markdown files in blogs/ (see blog_core.py) and ride along to
+both sinks, so the Weekly Blog tab works whichever source the page picked.
+
 Two sinks, either or both:
     Firestore  -- live push updates via onSnapshot, reachable from anywhere.
     Static JSON -- a single bundle the page can fetch(); no SDK, no keys.
@@ -23,6 +26,7 @@ Usage:
     python sync_pipeline.py --season 2025                 # one season
     python sync_pipeline.py --dry-run                     # compute, write nothing
     python sync_pipeline.py --credentials path/to/key.json
+    python sync_pipeline.py --blogs-dir ./blogs            # markdown blog posts
 
 Requirements:
     pip install -r requirements.txt             # requests only; enough for
@@ -48,6 +52,7 @@ import sys
 import time
 from collections import defaultdict
 
+import blog_core
 import league_core as core
 
 DEFAULT_CREDENTIALS_PATH = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "serviceAccountKey.json")
@@ -295,17 +300,40 @@ def init_firestore(credentials_path):
     return firestore.client()
 
 
-def push_documents(db, season_docs, career_doc, league_trends):
+def push_documents(db, season_docs, career_doc, league_trends,
+                   blogs=None, reconcile_blogs=False):
     """
     One batched write for everything, so the dashboard never observes a
     half-updated league (e.g. new standings against a stale career summary).
+
+    `reconcile_blogs` deletes Firestore blog documents that no longer have a
+    markdown file behind them. It is off unless a blogs directory actually
+    exists: a Pi checked out without the folder must not interpret "I have no
+    posts" as "delete every post", and console-authored posts predating the
+    markdown pipeline stay put until the folder says otherwise.
     """
     batch = db.batch()
     for season, doc in season_docs.items():
         batch.set(db.collection("seasons").document(str(season)), doc, merge=True)
     batch.set(db.collection("meta").document("career_summary"), career_doc, merge=True)
     batch.set(db.collection("meta").document("league_trends"), {"rows": league_trends}, merge=True)
+
+    blogs = blogs or []
+    for post in blogs:
+        # merge=False: the markdown file is the whole truth for a post, so a
+        # field deleted from front matter must disappear rather than linger.
+        batch.set(db.collection("blogs").document(post["id"]), post)
+
+    removed = 0
+    if reconcile_blogs:
+        keep = {post["id"] for post in blogs}
+        for ref in db.collection("blogs").list_documents():
+            if ref.id not in keep:
+                batch.delete(ref)
+                removed += 1
+
     batch.commit()
+    return len(blogs), removed
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +358,9 @@ def main():
     parser.add_argument("--skip-firestore", action="store_true",
                         help="Don't write to Firestore. Use with --json-out for a "
                              "Firebase-free deployment.")
+    parser.add_argument("--blogs-dir", default=blog_core.DEFAULT_BLOGS_DIR, metavar="DIR",
+                        help="Folder of markdown blog posts (default: %(default)s). "
+                             "A missing folder simply means no posts.")
     args = parser.parse_args()
 
     seasons_to_run = [args.season] if args.season else sorted(all_league_ids)
@@ -354,6 +385,13 @@ def main():
 
     career_doc, league_trends = build_career_and_trends(season_docs)
 
+    # Blogs are independent of --season: they're files, not fetched data, so a
+    # single-season run still carries the full set and can't publish a partial
+    # archive the way career_summary would.
+    print("Loading blog posts...")
+    blogs = blog_core.load_posts(args.blogs_dir, verbose=True)
+    have_blogs_dir = os.path.isdir(args.blogs_dir)
+
     if args.dry_run:
         print("\n--dry-run set: skipping Firestore writes.")
         for season in sorted(season_docs):
@@ -365,6 +403,9 @@ def main():
                       f"avg {team['rolling_average_score']:>6.2f}")
         if args.json_out:
             print(f"Would write a static bundle to {os.path.join(args.json_out, 'league.json')}.")
+        featured = next((p["id"] for p in blogs if p["is_current"]), None)
+        print(f"Would write {len(blogs)} blog post(s)"
+              + (f", featuring '{featured}'." if featured else "."))
         if args.skip_firestore:
             print("Would skip Firestore (--skip-firestore).")
         if partial_run:
@@ -382,7 +423,8 @@ def main():
             print("REFUSING to write a partial JSON bundle: it would replace the whole "
                   "league with one season. Run without --season to regenerate it.")
         else:
-            path, size = write_json_bundle(args.json_out, season_docs, career_doc, league_trends)
+            path, size = write_json_bundle(args.json_out, season_docs, career_doc,
+                                           league_trends, blogs=blogs)
             print(f"Wrote {path} ({size / 1024:.1f} KB).")
 
     if args.skip_firestore:
@@ -397,11 +439,13 @@ def main():
         for season, doc in season_docs.items():
             batch.set(db.collection("seasons").document(str(season)), doc, merge=True)
         batch.commit()
-        print(f"[{args.season}] written to Firestore (career/trends left untouched).")
+        print(f"[{args.season}] written to Firestore (career/trends/blogs left untouched).")
     else:
-        push_documents(db, season_docs, career_doc, league_trends)
+        written, removed = push_documents(db, season_docs, career_doc, league_trends,
+                                          blogs=blogs, reconcile_blogs=have_blogs_dir)
         print(f"Wrote {len(season_docs)} season doc(s) + meta/career_summary + "
-              f"meta/league_trends to Firestore.")
+              f"meta/league_trends + {written} blog post(s) to Firestore"
+              + (f" ({removed} stale post(s) deleted)." if removed else "."))
     print("\nSync complete.")
 
 

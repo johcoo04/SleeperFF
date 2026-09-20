@@ -19,6 +19,8 @@ league_core.py            THE rules: fetch, owner identity, ranking,
         |                 tie-breaks, live-week capping
         +-- main.py           -> 10-sheet Excel workbook (archive)
         +-- sync_pipeline.py  -> Firestore documents and/or static league.json
+                    |             ^
+blogs/*.md -> blog_core.py -------+  markdown posts, both sinks
                     |
               index.html      prefers data/league.json, falls back to Firestore
 ```
@@ -37,7 +39,10 @@ legitimately differs.
 | `main.py` | Excel archive. `python main.py` |
 | `sync_pipeline.py` | Firestore + JSON sinks. See flags below. |
 | `index.html` | Dashboard. Dual-source, no build step. |
-| `test_league_core.py` | 24 tests, no network. `python -m unittest test_league_core` |
+| `blog_core.py` | Markdown blog posts -> post documents. |
+| `blogs/` | The posts themselves. `_`-prefixed files don't publish. |
+| `test_league_core.py` | 24 tests, no network. |
+| `test_blog_core.py` | 28 tests, no network. |
 | `league_data.json` | The only place league IDs live. |
 | `firestore.rules` | Read-only for browsers; all writes denied. |
 | `requirements*.txt` | Split by intent: base (`requests`), `-firestore`, `-excel`. |
@@ -52,6 +57,7 @@ python sync_pipeline.py --json-out ./data          # Firestore + static bundle
 python sync_pipeline.py --json-out ./data --skip-firestore   # no Firebase at all
 python sync_pipeline.py --season 2026              # one season (Firestore only)
 python sync_pipeline.py --dry-run                  # compute, write nothing
+python sync_pipeline.py --blogs-dir ./blogs        # default is ./blogs
 ```
 
 `--season` refuses to write a JSON bundle: the bundle is whole-league, so a
@@ -150,7 +156,9 @@ standings.
 - **Live-week capping is now active.** Live state is 2026 week 2, so 2026 is
   capped to week 1 complete while 2023-2025 fetch in full. This was dormant
   until 2026 was added.
-- **24 unit tests**, no network required.
+- **52 unit tests** (24 league + 28 blog), no network required.
+- **The blog pipeline end to end**: a post in `blogs/` parses, lands in
+  `league.json`, and carries every field `index.html` dereferences.
 
 ### Not verified
 - The tie-breaker path (no real ties exist).
@@ -160,7 +168,53 @@ standings.
 
 ---
 
-## 6. Current data
+## 6. Blog authoring (decided and built, 2026-09-20)
+
+Posts are **markdown files in `blogs/`**, not documents hand-written in the
+Firebase console. Both options worked; markdown won because posts then
+version-control with the league data, survive `--skip-firestore`, and don't
+need a Firestore write rule (`firestore.rules` denies every write, and the
+console path would have required opening one).
+
+`blog_core.py` parses them; `sync_pipeline.py` ships them to **both** sinks,
+so the tab works whichever source the page picked. Content ships as **raw
+markdown** — `index.html` already loads marked.js and renders client-side, so
+the pipeline adds no dependency.
+
+Three decisions inside that are easy to get wrong later:
+
+- **`season` is a string, `week` is an int.** The archive filters compare
+  season against a `<select>` value and sort weeks numerically. Swapping them
+  silently empties both filters. There's a test pinning this.
+- **`created_at` is synthesized from season+week**, not file mtime. `git
+  clone` on the Pi stamps every file with the checkout time, which would
+  flatten the archive's order. An explicit `date:` still wins.
+- **Featured is derived, not flagged.** The newest post is featured
+  automatically, because a manual flag needs clearing every single week and
+  forgetting leaves a stale recap up forever. `featured: true` pins one.
+
+A malformed post is warned about and skipped, never fatal — a cron sync must
+still deliver the week's scores if a recap has a typo. Deleting a file
+unpublishes the post from both sinks; the folder is the source of truth.
+
+See `blogs/_README.md` for the authoring format.
+
+---
+
+## 7. Firestore on the Pi (decided 2026-09-20)
+
+**Keep both sinks.** The Pi writes the static bundle *and* Firestore, so a
+viewer still sees data when the Pi is down or unreachable. The cost is the
+service account key living on the Pi, which `DEPLOY.md` §2 already handles by
+keeping it in `~/.config/sleeperff/` outside the repo. `--skip-firestore`
+remains available and needs no code change if that trade stops being worth it.
+
+This requires no work: both sinks is what `sync.sh` in `DEPLOY.md` already
+does.
+
+---
+
+## 8. Current data
 
 4 seasons / 52 weeks / 6 owners. Entire league history is ~108 KB of JSON;
 the page is ~36 KB. Growth is ~38 KB/season. Resources are not a constraint
@@ -175,28 +229,57 @@ week 3.
 
 ---
 
-## 7. Open items
+## 9. Open items
 
+Ordered by what blocks what. Items 1-2 were the two open *decisions*; both are
+now made and item 2 is built, so what's left is mostly deployment.
+
+### Blocking the Pi deploy
 1. **Port to the Raspberry Pi.** Full procedure in `DEPLOY.md`: nginx, weekly
-   cron running `--json-out /var/www/leaguehq/data`, service account key moved
-   to `~/.config/sleeperff/` (outside the repo), and **Cloudflare Tunnel** for
-   outside access — league members are on other networks, and a tunnel needs
-   no port forwarding and doesn't expose the home IP.
-2. **Blog authoring — the last real gap.** Nothing writes blog posts, so that
-   tab renders "No featured post yet." Decision needed: markdown files in a
-   folder the pipeline bundles, vs. hand-writing documents in the Firebase
-   console. Nothing else is blocked on this.
-3. **Merge to `main`.** All work is on `fix/owner-id-keying-and-live-verification`,
-   pushed to GitHub. `main` is untouched.
-4. **Decide whether the Pi keeps writing Firestore.** Keeping both means a
-   viewer still sees data when the Pi is down, at the cost of the service
-   account key living on the Pi. `--skip-firestore` drops the key entirely.
-5. **2027 and beyond:** add the league ID to `league_data.json`. Nothing else
-   needs to change — season list, rule table, and week capping all follow.
+   cron running `--json-out /var/www/leaguehq/data`, service account key in
+   `~/.config/sleeperff/`, and **Cloudflare Tunnel** for outside access —
+   league members are on other networks, and a tunnel needs no port forwarding
+   and doesn't expose the home IP. Nothing else is waiting on this.
+2. **`sync.sh` doesn't copy `blogs/`** — it `cd`s into the repo, so posts come
+   from the git checkout. That means publishing a post is a `git pull` on the
+   Pi, or an edit in place. Worth deciding which before the first real post.
+
+### Content
+3. **Write a real post.** `blogs/_example-2026-w01-recap.md` is a format
+   demonstration, not a published post — the `_` prefix keeps it out of the
+   bundle. Rename it without the underscore to publish, or delete it and write
+   your own. Until then the tab still says "No featured post yet."
+
+### Security / config hygiene
+4. **Restrict the Firebase web API key** in the Google Cloud console (API
+   restrictions + HTTP referrer allowlist). The key in `index.html` is a public
+   client identifier and is safe in a public repo, but unrestricted it can be
+   reused against this project's quota. Flagged in the code comment since day
+   one, never done.
+5. **Confirm `firestore.rules` is actually deployed.** The file is versioned
+   here, but nothing records whether `firebase deploy --only firestore:rules`
+   has been run against the live project. If it hasn't, the project may still
+   be on default rules.
+6. **Set `FIREBASE_SERVICE_ACCOUNT` in your shell profile** on the dev machine,
+   or Firestore writes fail with a "key not found" exit. See §1 Credentials.
+
+### Verification gaps
+7. **Systematic pass over `index.html`.** It loads and "looks good", but no tab
+   has been checked field by field in a browser — including the blog tab, which
+   has never rendered a real post.
+8. **The tie-breaker path.** No real tie has occurred in 52 weeks, so it's
+   covered by synthetic tests only. Nothing to do but wait for one.
+
+### Housekeeping
+9. **Merge to `main`.** All work is on
+   `fix/owner-id-keying-and-live-verification`, pushed to GitHub. `main` is
+   untouched and is now many commits behind.
+10. **2027 and beyond:** add the league ID to `league_data.json`. Nothing else
+    needs to change — season list, rule table, and week capping all follow.
 
 ---
 
-## 8. Environment gotcha
+## 10. Environment gotcha
 
 Claude Code runs inside **Warp** (`dev.warp.Warp-Stable`). macOS TCC gates
 `~/Documents`, and an OS or app update can silently revoke it, after which
