@@ -96,22 +96,66 @@ can never serve a half-written file mid-sync.
 
 ## 5. Reach it from outside the house
 
-League members are on other networks, so the page needs to be reachable. In
-preference order:
+League members are on other networks, so the page has to be reachable. Two
+paths are set up on the Pi **at the same time** — they both just proxy to
+local port 80, so they don't conflict, and either can serve the league.
 
-1. **Cloudflare Tunnel (recommended).** Free, gives HTTPS and a real hostname,
-   and needs **no port forwarding** — the Pi makes an outbound connection, so
-   your home IP is never exposed and no inbound ports are opened. Install
-   `cloudflared` on the Pi, then `cloudflared tunnel login`, create a tunnel,
-   point it at `http://localhost:80`, and route a DNS hostname to it. Run it as
-   a systemd service so it survives reboots. (Follow Cloudflare's current docs
-   for exact commands — they change.)
-2. **Tailscale.** Simplest and most private, but every viewer must install
-   Tailscale and be on your tailnet. Fine for you, awkward for 5 league members.
-3. **Port forwarding + dynamic DNS.** Works, but exposes your home IP and an
-   inbound port, and you're responsible for TLS. Least preferred.
+### Cloudflare quick tunnel (currently the working one)
 
-Whichever you pick, the page itself doesn't change.
+Free, needs no Cloudflare account and no domain. Installed as a service:
+
+```bash
+curl -fsSL -o cloudflared.deb \
+  https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb
+sudo dpkg -i cloudflared.deb
+sudo systemctl enable --now cloudflared-quick
+```
+
+Unit lives at `/etc/systemd/system/cloudflared-quick.service` and runs
+`cloudflared tunnel --no-autoupdate --url http://localhost:80`.
+
+**The hostname is random and changes on every restart** — reboot, crash, or
+`systemctl restart` all issue a new one. There is no way to pin it without a
+domain. To find the current URL:
+
+```bash
+journalctl -u cloudflared-quick | grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" | tail -1
+```
+
+Because the URL moves, share a redirect (a bit.ly or similar) rather than the
+raw hostname, and re-point it after a reboot.
+
+### Tailscale Funnel (configured, blocked upstream)
+
+Set up and correct, but **Tailscale never published the public DNS record**,
+so `https://bonkheads.tail8b70e6.ts.net/` does not resolve. Everything on our
+side checks out:
+
+- `funnel` node attribute present, plus `funnel-ports?ports=443,8443,10000`
+- MagicDNS and HTTPS Certificates enabled on the tailnet
+- TLS cert issued successfully (so Tailscale's own `SetDNS` works)
+- `Hostinfo.IngressEnabled changed to true`
+- `tailscale funnel status` reports Funnel on, proxying to `127.0.0.1:80`
+
+Authoritative DNS (`ns1.dnsimple.com`) returns NOERROR with no A, AAAA, or
+CNAME record. Tried: waiting well past the documented 10 minutes, toggling
+Funnel off and on, restarting `tailscaled`, and renaming the node (which
+forces republication under a new name). None produced a record. This matches
+a known class of upstream bug — tailscale/tailscale#7103.
+
+It is left **armed on purpose**: if Tailscale ever publishes the record, the
+hostname starts working with no action needed, and it costs nothing to leave
+running. Check with:
+
+```bash
+dig +short @ns1.dnsimple.com bonkheads.tail8b70e6.ts.net A
+```
+
+### If you ever buy a domain
+
+A named Cloudflare tunnel gives a stable hostname and drops the restart
+problem entirely. Point it at `http://localhost:80` exactly like the quick
+tunnel; nothing else on the Pi changes.
 
 ## 6. Which source is the page using?
 

@@ -170,7 +170,9 @@ nginx serving `/var/www/leaguehq`, enabled on boot. venv holds `requests` +
 `/home/pi/.config/sleeperff/serviceAccountKey.json` (600). Cron runs
 `sync.sh` Tuesdays 09:05 America/New_York, logging to `/home/pi/sync.log`.
 First real sync wrote both sinks and served back 110.9 KB over HTTP with the
-no-cache header intact.
+no-cache header intact. Publicly reachable via a Cloudflare quick tunnel
+(`cloudflared-quick.service`); Tailscale Funnel is installed and armed but
+blocked by an upstream DNS-publication bug. See `DEPLOY.md` §5 for both.
 
 ### Not verified
 - The tie-breaker path (no real ties exist).
@@ -246,24 +248,33 @@ week 3.
 Ordered by what blocks what. Items 1-2 were the two open *decisions*; both are
 now made and item 2 is built, so what's left is mostly deployment.
 
-### The Pi — deployed 2026-09-22, one piece left
-1. **Cloudflare Tunnel is not set up.** This is the only thing standing
-   between the current state and league members being able to load the page.
-   The Pi serves fine on the LAN (`http://192.168.1.23/`) but nothing outside
-   the house can reach it. The tunnel login is interactive (it opens a
-   browser), so it has to be run by hand on the Pi:
-   `cloudflared tunnel login`, create a tunnel, point it at
-   `http://localhost:80`, route a DNS hostname to it, install as a systemd
-   service. `cloudflared` is not installed yet.
+### The Pi — deployed and publicly reachable 2026-09-22
+1. **The public URL moves on every restart.** A Cloudflare *quick* tunnel is
+   live and serving the league (`cloudflared-quick.service`, enabled on
+   boot). Quick tunnels need no account and no domain, but the hostname is
+   random and reissued on every restart — so share a redirect (bit.ly) and
+   re-point it after a reboot. Find the current URL with:
+   `journalctl -u cloudflared-quick | grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" | tail -1`.
+   A domain would fix this permanently via a named tunnel; it was considered
+   and declined as not worth the money.
+
+   **Tailscale Funnel is also configured and left armed**, but Tailscale never
+   published the public DNS record, so its hostname doesn't resolve. Our side
+   is verifiably correct (funnel attr, ports cap, cert issued, ingress
+   enabled); authoritative DNS returns no record. Waiting, toggling,
+   restarting `tailscaled`, and renaming the node all failed. Known upstream
+   bug class. If it ever publishes, it starts working on its own — that's why
+   it's still running. See `DEPLOY.md` §5.
 2. ~~`sync.sh` doesn't handle blogs.~~ **Done.** `sync.sh` is now in the repo
    and starts with `git pull --ff-only origin main`, so publishing a post is
    "push to main" and the Pi picks it up on the next run.
 
 ### Content
-3. **Write a real post.** `blogs/_example-2026-w01-recap.md` is a format
-   demonstration, not a published post — the `_` prefix keeps it out of the
-   bundle. Rename it without the underscore to publish, or delete it and write
-   your own. Until then the tab still says "No featured post yet."
+3. ~~Write a real post.~~ **Done.** 49 posts are live: the league's back
+   catalogue (2023 wk1 - 2025 wk15) plus 2026 weeks 1-2. `blogs/_TEMPLATE.md`
+   is the starting point for new ones; keep the `_` while drafting and drop it
+   to publish. 2023 week 8 deliberately has two posts (original and a
+   "(Corrected)" follow-up) — that's the league's record, not a bug.
 
 ### Security / config hygiene
 4. **Restrict the Firebase web API key** — *partially attempted 2026-09-22
@@ -287,9 +298,10 @@ now made and item 2 is built, so what's left is mostly deployment.
    or Firestore writes fail with a "key not found" exit. See §1 Credentials.
 
 ### Verification gaps
-7. **Systematic pass over `index.html`.** It loads and "looks good", but no tab
-   has been checked field by field in a browser — including the blog tab, which
-   has never rendered a real post.
+7. **Systematic pass over `index.html`.** The LAN page was eyeballed and looks
+   right, but no tab has been checked field by field — including the blog tab
+   now that it carries 49 posts, and the archive's season/week filters, which
+   have never been exercised against a real archive.
 8. **The tie-breaker path.** No real tie has occurred in 52 weeks, so it's
    covered by synthetic tests only. Nothing to do but wait for one.
 
