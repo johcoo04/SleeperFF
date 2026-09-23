@@ -278,6 +278,7 @@ def main():
     all_league_ids = core.league_ids(config)
     url_base = core.base_url(config)
     requested_max = core.weeks_to_fetch(config)
+    name_overrides = core.owner_names(config)
 
     print("🏈 SLEEPER FANTASY FOOTBALL MULTI-YEAR ANALYZER")
     print("=" * 60)
@@ -288,7 +289,8 @@ def main():
         print(f"\n🏈 Fetching data for {season} season...")
         print(f"   League ID: {all_league_ids[season]}")
         _, weeks = core.fetch_season_weeks(
-            season, all_league_ids[season], url_base, requested_max, verbose=True)
+            season, all_league_ids[season], url_base, requested_max, verbose=True,
+            name_overrides=name_overrides)
         if not weeks:
             print(f"   ❌ No completed weeks for {season}")
             continue

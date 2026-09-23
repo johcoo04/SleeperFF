@@ -63,7 +63,8 @@ DEFAULT_CREDENTIALS_PATH = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "serviceAc
 # ---------------------------------------------------------------------------
 
 def build_season_document(season, league_id, url_base=core.DEFAULT_BASE_URL,
-                          requested_max=core.DEFAULT_MAX_WEEKS, verbose=False):
+                          requested_max=core.DEFAULT_MAX_WEEKS, verbose=False,
+                          name_overrides=None):
     """
     Returns the seasons/{year} document: standings plus every completed week.
 
@@ -72,7 +73,8 @@ def build_season_document(season, league_id, url_base=core.DEFAULT_BASE_URL,
     system (and the dashboard) joins on.
     """
     owner_map, weeks = core.fetch_season_weeks(
-        season, league_id, url_base, requested_max, verbose=verbose)
+        season, league_id, url_base, requested_max, verbose=verbose,
+        name_overrides=name_overrides)
 
     totals = defaultdict(lambda: {
         "total_scoreboard_points": 0.0,
@@ -411,6 +413,7 @@ def main():
     all_league_ids = core.league_ids(config)
     url_base = core.base_url(config)
     requested_max = core.weeks_to_fetch(config)
+    name_overrides = core.owner_names(config)
 
     parser = argparse.ArgumentParser(description="Sync Sleeper league data into Firestore.")
     parser.add_argument("--season", choices=sorted(all_league_ids), help="Limit sync to a single season.")
@@ -438,7 +441,8 @@ def main():
     for season in seasons_to_run:
         print(f"[{season}] fetching + computing...")
         doc, _ = build_season_document(season, all_league_ids[season], url_base,
-                                       requested_max, verbose=True)
+                                       requested_max, verbose=True,
+                                       name_overrides=name_overrides)
         season_docs[season] = doc
         print(f"[{season}] {doc['weeks_completed']} week(s) completed, "
               f"{len(doc['standings'])} team(s) in standings.")

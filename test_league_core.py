@@ -219,3 +219,49 @@ class TestLiveWeekCapping(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OwnerNameOverrides(unittest.TestCase):
+    """
+    The league calls each other Jack/Danny/Joe/..., not by Sleeper handle.
+    Overrides live in league_data.json and are applied in build_owner_map so
+    every output shows the same name.
+    """
+
+    USERS = [{"user_id": "u1", "display_name": "Gatorsby90", "metadata": {"team_name": "Team Kyle"}}]
+    ROSTERS = [{"roster_id": 1, "owner_id": "u1"}]
+
+    def test_override_replaces_the_sleeper_handle(self):
+        m = core.build_owner_map(self.USERS, self.ROSTERS, {"u1": "Kyle"})
+        self.assertEqual(m[1]["display_name"], "Kyle")
+
+    def test_owner_id_is_untouched_by_an_override(self):
+        # Rule 1: the override is cosmetic and must never become the key.
+        m = core.build_owner_map(self.USERS, self.ROSTERS, {"u1": "Kyle"})
+        self.assertEqual(m[1]["owner_id"], "u1")
+
+    def test_team_name_is_left_alone(self):
+        # team_name is the team's name, not the person's.
+        m = core.build_owner_map(self.USERS, self.ROSTERS, {"u1": "Kyle"})
+        self.assertEqual(m[1]["team_name"], "Team Kyle")
+
+    def test_no_overrides_keeps_sleeper_behaviour(self):
+        self.assertEqual(core.build_owner_map(self.USERS, self.ROSTERS)[1]["display_name"],
+                         "Gatorsby90")
+        self.assertEqual(core.build_owner_map(self.USERS, self.ROSTERS, {})[1]["display_name"],
+                         "Gatorsby90")
+
+    def test_an_unlisted_owner_falls_back_to_sleeper(self):
+        m = core.build_owner_map(self.USERS, self.ROSTERS, {"someone-else": "Nobody"})
+        self.assertEqual(m[1]["display_name"], "Gatorsby90")
+
+    def test_override_survives_a_rename_because_it_keys_on_owner_id(self):
+        # The same owner under both handles resolves to one name.
+        for handle in ("SillyG00SE69", "SillyG00SE13"):
+            users = [{"user_id": "u9", "display_name": handle, "metadata": {}}]
+            m = core.build_owner_map(users, [{"roster_id": 3, "owner_id": "u9"}], {"u9": "Chase"})
+            self.assertEqual(m[3]["display_name"], "Chase", handle)
+
+    def test_config_reader_stringifies_ids(self):
+        self.assertEqual(core.owner_names({"owner_names": {123: "Jack"}}), {"123": "Jack"})
+        self.assertEqual(core.owner_names({}), {})

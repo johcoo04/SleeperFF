@@ -68,6 +68,21 @@ def weeks_to_fetch(config):
     return (config.get("settings") or {}).get("weeks_to_fetch", DEFAULT_MAX_WEEKS)
 
 
+def owner_names(config):
+    """
+    {owner_id: preferred display name}
+
+    Sleeper handles (Gatorsby90, SillyG00SE13, ...) are not what anyone calls
+    each other, and the blog has always used first names. This maps one to the
+    other for every output at once.
+
+    Keyed on owner_id like everything else — see rule 1. Keying the override
+    on the Sleeper name would break for the owner who renamed themselves, and
+    would need a second entry to cover both spellings of one person.
+    """
+    return {str(k): v for k, v in (config.get("owner_names") or {}).items()}
+
+
 # ---------------------------------------------------------------------------
 # Sleeper API
 # ---------------------------------------------------------------------------
@@ -147,14 +162,20 @@ def determine_effective_max_week(season, requested_max=DEFAULT_MAX_WEEKS,
 # Identity — rule 1
 # ---------------------------------------------------------------------------
 
-def build_owner_map(users, rosters):
+def build_owner_map(users, rosters, name_overrides=None):
     """
     roster_id -> {owner_id, display_name, team_name}
 
     `owner_id` is the canonical key for every aggregation and every stored
     document. `display_name` / `team_name` are for rendering only and must
     never be used as keys or join fields — see rule 1 in the module docstring.
+
+    `name_overrides` ({owner_id: name}) replaces the Sleeper handle with the
+    name the league actually uses. Applied here rather than in each entry
+    point so the Excel workbook, the Firestore documents and the static bundle
+    can't drift into showing different names for the same person.
     """
+    name_overrides = name_overrides or {}
     user_by_id = {u["user_id"]: u for u in users}
     mapping = {}
     for roster in rosters:
@@ -168,11 +189,15 @@ def build_owner_map(users, rosters):
         display_name = user.get("display_name") or metadata.get("team_name") or f"Roster {roster_id}"
         team_name = metadata.get("team_name") or user.get("display_name") or f"Team {roster_id}"
 
+        resolved_id = owner_id or f"roster_{roster_id}"
         mapping[roster_id] = {
             # A roster with no owner (rare: abandoned team) still needs a
             # stable unique key, so fall back to the roster slot itself.
-            "owner_id": owner_id or f"roster_{roster_id}",
-            "display_name": display_name,
+            "owner_id": resolved_id,
+            # An override wins over whatever Sleeper reports, including the
+            # fallbacks above; team_name is left alone, since it's the team's
+            # name and not the person's.
+            "display_name": name_overrides.get(resolved_id, display_name),
             "team_name": team_name,
         }
     return mapping
@@ -367,7 +392,8 @@ def compute_week(matchups, owner_map, points_for_rank):
 
 
 def fetch_season_weeks(season, league_id, url_base=DEFAULT_BASE_URL,
-                       requested_max=DEFAULT_MAX_WEEKS, verbose=False):
+                       requested_max=DEFAULT_MAX_WEEKS, verbose=False,
+                       name_overrides=None):
     """
     Fetch and normalize a whole season.
 
@@ -378,6 +404,7 @@ def fetch_season_weeks(season, league_id, url_base=DEFAULT_BASE_URL,
     owner_map = build_owner_map(
         fetch_users(league_id, url_base),
         fetch_rosters(league_id, url_base),
+        name_overrides,
     )
     points_for_rank = points_for_rank_fn(season)
     max_week = determine_effective_max_week(season, requested_max, url_base, verbose=verbose)
