@@ -180,7 +180,7 @@
       <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>#</th><th>Owner</th><th>Career Scoreboard Pts</th><th>Career Avg</th><th>Total PF</th><th>2pt Wks</th><th>0pt Wks</th><th>Last %</th><th>Weeks Played</th></tr>
+            <tr><th>#</th><th>Owner</th><th>Career Scoreboard Pts</th><th>Career Avg</th><th>Total PF</th><th>2pt Wks</th><th>1pt Wks</th><th>0pt Wks</th><th>Last %</th><th>Weeks Played</th></tr>
           </thead>
           <tbody id="careerBody"></tbody>
         </table>
@@ -537,6 +537,7 @@ function renderCareerLeaderboard(){
       <td>${o.career_average_score.toFixed(2)}</td>
       <td>${o.career_total_pf.toFixed(2)}</td>
       <td style="color:var(--green)">${o.two_point_weeks ?? '—'}</td>
+      <td>${o.one_point_weeks ?? '—'}</td>
       <td style="color:var(--red)">${o.zero_point_weeks ?? '—'}</td>
       <td>${o.last_place_rate != null ? o.last_place_rate.toFixed(1) + '%' : '—'}</td>
       <td>${o.weeks_played}</td>
