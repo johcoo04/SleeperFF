@@ -20,11 +20,9 @@ author: Commissioner
 
 - League average was 161.22 with a 32.18 spread, the 6th narrowest in league history. However this wasn't the only tight thing this week as Carl tried to spread Kyles cheeks this past week and instead was only able to give him a hickey. Emma is still driving up to stab him now.
 
-- Kyle's 142.38 is the week's low and his 11th career zero-point week. Funny
-  enough, under the old format where the bottom two scores both took a zero,
-  Kyle was the cleanest in the league:
+- Kyle's 142.38 is the week's low and his 11th career zero-point week. Funny enough, under the old format where the bottom two scores both took a zero Kyle was the cleanest in the league:
 
-| | Owner | 0pt |
+| # | Owner | 0pt |
 |---|---|---|
 | 1 | Joe | 21 |
 | 2 | Carl | 13 |
@@ -32,18 +30,33 @@ author: Commissioner
 | 4 | Chase / Jack | 8 |
 | 6 | Kyle | 7 |
 
-However, with the adoption of the new rules, Kyle has now tied for most, with
-a much more even split:
+However, with the adoption of the new rules, Kyle has now tied for most, with a much more even split:
 
-| | Owner | 0pt |
+| # | Owner | 0pt |
 |---|---|---|
 | 1 | Carl / Chase / Joe / Kyle | 4 |
 | 5 | Danny | 2 |
 | 6 | Jack | 0 |
 
+- Fortunately even without a Kicker I was able to beat him out and not get a 0.
 
-- Jack opens 5th despite owning the best career résumé in the league: 24
-  two-point weeks and only 8 zeros, both league bests
+- Joe decided that since he doesn't have a Job he was finally able to focus on the important things like the desire to have sex and fantasy football. earned himself a well earned point. Half of the time he finds himself at 0 points through one week so improvement on the rise!
 
-- Joe's 163.02 is a 1-point week, which for him counts as progress — he leads
-  the league in career zero-point weeks with 25, more than double mine (8)
+- We can now see the scoreboards all time, and its as followed:
+
+**ALL-TIME LEADERBOARD**
+
+| # | Owner | Career Pts | Career Avg | Total PF | Weeks |
+|---|---|---|---|---|---|
+| 1 | Jack | 68 | 160.48 | 8345.00 | 52 |
+| 2 | Kyle | 62 | 151.44 | 7875.10 | 52 |
+| 3 | Danny | 58 | 151.79 | 7892.86 | 52 |
+| 4 | Chase | 57 | 152.27 | 7917.78 | 52 |
+| 5 | Carl | 49 | 145.75 | 7578.90 | 52 |
+| 6 | Joe | 36 | 145.41 | 7561.18 | 52 |
+
+What is funnny thought is that the only two people I have winning head to head records in is Joe and Carl, something about the homeless beating up on me and then in turn I pass it on to beating up on the other fellow new yorkers.
+
+Through one week Kyle had more injuries than he did points and now has more hickeys from Carl than he did points.
+
+Fantasy football is BACK fellas, if you have updates to the page please let me know what else you would like to see - continuing to add.
