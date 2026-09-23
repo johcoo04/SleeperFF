@@ -131,6 +131,7 @@
     <button data-tab="scoreboard" class="tab-btn active pb-2 pt-1 whitespace-nowrap">Scoreboard</button>
     <button data-tab="career" class="tab-btn pb-2 pt-1 whitespace-nowrap">Career / Multi-Year</button>
     <button data-tab="trends" class="tab-btn pb-2 pt-1 whitespace-nowrap">League Trends</button>
+    <button data-tab="history" class="tab-btn pb-2 pt-1 whitespace-nowrap">Score History</button>
     <button data-tab="blog" class="tab-btn pb-2 pt-1 whitespace-nowrap">Weekly Blog</button>
   </nav>
 
@@ -235,7 +236,7 @@
       <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>Season</th><th>Week</th><th>League Avg</th><th>High</th><th>Low</th><th>Spread</th></tr>
+            <tr><th>Season</th><th>Week</th><th>League Avg</th><th>High</th><th>High Scorer</th><th>Low</th><th>Low Scorer</th><th>Spread</th></tr>
           </thead>
           <tbody id="trendsBody"></tbody>
         </table>
@@ -244,6 +245,28 @@
   </section>
 
   <!-- ===================== TAB: WEEKLY BLOG ===================== -->
+  <!-- ===================== TAB: SCORE HISTORY ===================== -->
+  <section id="tab-history" class="tab-panel mx-3 mt-4 sm:mx-6 space-y-4">
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-1">
+        <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide" style="color:var(--accent)">SCORE HISTORY</h2>
+        <select id="historySeasonSelect" class="select-like"></select>
+      </div>
+      <p class="text-xs mb-4" style="color:var(--text-dim)">
+        Every week of the season, every owner. Green is the week's high, red the low.
+        Hover a score for its rank and the points it paid.
+      </p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr id="historyHead"></tr></thead>
+          <tbody id="historyBody"></tbody>
+          <tfoot id="historyFoot"></tfoot>
+        </table>
+      </div>
+      <p id="historyEmptyMsg" class="text-sm text-center py-8 hidden" style="color:var(--text-dim)">No weeks recorded for this season yet.</p>
+    </div>
+  </section>
+
   <section id="tab-blog" class="tab-panel mx-3 mt-4 sm:mx-6 mb-6 space-y-4">
     <div class="panel px-4 py-4 sm:px-8 sm:py-6">
       <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide mb-3" style="color:var(--accent)">FEATURED RECAP</h2>
@@ -339,6 +362,11 @@ const els = {
 
   trendsChartCanvas: document.getElementById('trendsChart'),
   trendsBody: document.getElementById('trendsBody'),
+  historySeasonSelect: document.getElementById('historySeasonSelect'),
+  historyHead: document.getElementById('historyHead'),
+  historyBody: document.getElementById('historyBody'),
+  historyFoot: document.getElementById('historyFoot'),
+  historyEmptyMsg: document.getElementById('historyEmptyMsg'),
 
   featuredBlog: document.getElementById('featuredBlog'),
   blogSeasonFilter: document.getElementById('blogSeasonFilter'),
@@ -651,7 +679,9 @@ function renderTrendsTable(){
       <td>${r.season}</td><td>${r.week}</td>
       <td>${r.league_average.toFixed(1)}</td>
       <td style="color:var(--green)">${r.high_score.toFixed(1)}</td>
+      <td>${escapeHtml(r.high_score_owner || '—')}</td>
       <td style="color:var(--red)">${r.low_score.toFixed(1)}</td>
+      <td>${escapeHtml(r.low_score_owner || '—')}</td>
       <td>${r.spread.toFixed(1)}</td>
     `;
     els.trendsBody.appendChild(tr);
@@ -683,6 +713,88 @@ function renderTrendsChart(){
     },
   });
 }
+
+// =========================================================================
+// SCORE HISTORY TAB
+// =========================================================================
+let historySeason = null;
+
+function populateHistorySeasons(){
+  const years = Object.keys(seasonDocs)
+    .filter(y => Object.keys(seasonDocs[y].weeks || {}).length)
+    .sort();
+  if(!years.length){ historySeason = null; return; }
+  // Keep the user's pick across re-renders (a Firestore snapshot can fire at
+  // any time); otherwise default to the most recent season with data.
+  if(!years.includes(historySeason)) historySeason = years[years.length - 1];
+  els.historySeasonSelect.innerHTML = years
+    .map(y => `<option value="${y}">${y}</option>`).join('');
+  els.historySeasonSelect.value = historySeason;
+}
+
+function renderHistory(){
+  const doc = seasonDocs[historySeason];
+  const weekKeys = doc ? Object.keys(doc.weeks || {}).sort((a, b) => Number(a) - Number(b)) : [];
+  els.historyEmptyMsg.classList.toggle('hidden', weekKeys.length > 0);
+  els.historyHead.innerHTML = '';
+  els.historyBody.innerHTML = '';
+  els.historyFoot.innerHTML = '';
+  if(!weekKeys.length) return;
+
+  // Column order follows the season's standings so the table reads like the
+  // scoreboard. Falls back to first-seen order if standings are missing.
+  let owners = (doc.standings || []).map(s => ({ id: s.owner_id, name: s.display_name }));
+  if(!owners.length){
+    const seen = new Map();
+    weekKeys.forEach(w => doc.weeks[w].results.forEach(r => {
+      if(!seen.has(r.owner_id)) seen.set(r.owner_id, r.display_name);
+    }));
+    owners = [...seen].map(([id, name]) => ({ id, name }));
+  }
+
+  els.historyHead.innerHTML = '<th>Week</th>' +
+    owners.map(o => `<th>${escapeHtml(o.name || o.id)}</th>`).join('') +
+    '<th>Avg</th><th>Spread</th>';
+
+  const totals = new Map(owners.map(o => [o.id, { sum: 0, n: 0 }]));
+
+  weekKeys.forEach(w => {
+    const week = doc.weeks[w];
+    const byOwner = new Map(week.results.map(r => [r.owner_id, r]));
+    const scores = week.results.map(r => r.weekly_score);
+    const hi = Math.max(...scores), lo = Math.min(...scores);
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${week.week_number ?? w}</td>` + owners.map(o => {
+      const r = byOwner.get(o.id);
+      if(!r) return '<td style="color:var(--text-dim)">—</td>';
+      const t = totals.get(o.id);
+      if(t){ t.sum += r.weekly_score; t.n += 1; }
+      // Colour only the week's extremes; colouring every cell turns the
+      // table into noise and hides the thing you're scanning for.
+      const colour = r.weekly_score === hi ? 'var(--green)'
+                   : r.weekly_score === lo ? 'var(--red)' : 'inherit';
+      const tip = `Rank ${r.weekly_rank} · ${r.points_awarded} pt`;
+      return `<td style="color:${colour}" title="${escapeHtml(tip)}">${r.weekly_score.toFixed(2)}</td>`;
+    }).join('') +
+      `<td style="color:var(--text-dim)">${week.league_average.toFixed(1)}</td>` +
+      `<td style="color:var(--text-dim)">${week.spread.toFixed(1)}</td>`;
+    els.historyBody.appendChild(tr);
+  });
+
+  const foot = document.createElement('tr');
+  foot.innerHTML = '<td style="font-weight:600">Avg</td>' +
+    owners.map(o => {
+      const t = totals.get(o.id);
+      return `<td style="font-weight:600">${t && t.n ? (t.sum / t.n).toFixed(2) : '—'}</td>`;
+    }).join('') + '<td></td><td></td>';
+  els.historyFoot.appendChild(foot);
+}
+
+els.historySeasonSelect.addEventListener('change', () => {
+  historySeason = els.historySeasonSelect.value;
+  renderHistory();
+});
 
 // =========================================================================
 // WEEKLY BLOG TAB
@@ -777,6 +889,8 @@ function renderAll(){
   renderOutliers();
   renderTrendsTable();
   renderTrendsChart();
+  populateHistorySeasons();
+  renderHistory();
   renderFeaturedBlog();
   populateBlogFilters();
   renderBlogArchive();
@@ -814,6 +928,8 @@ async function subscribeFirestore(){
         renderStandings();
         renderWeekBrowser();
       }
+      populateHistorySeasons();
+      if(year === historySeason) renderHistory();
     }, (err) => console.error(`seasons/${year} sync failed`, err));
   });
 

@@ -170,6 +170,13 @@ def build_career_and_trends(season_docs):
                 "high_score": week["high_score"]["points"],
                 "low_score": week["low_score"]["points"],
                 "spread": week["spread"],
+                # Who put up the high and the low. The numbers alone made the
+                # trends table unreadable — a 237.54 means nothing without the
+                # name attached. Carried on the row rather than looked up from
+                # the season doc so the table works identically in Firestore
+                # mode, where trends load as their own document.
+                "high_score_owner": week["high_score"]["owner"],
+                "low_score_owner": week["low_score"]["owner"],
             })
 
             for entry in week["results"]:
