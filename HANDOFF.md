@@ -43,6 +43,7 @@ legitimately differs.
 | `blogs/` | The posts themselves. `_`-prefixed files don't publish. |
 | `test_league_core.py` | 24 tests, no network. |
 | `test_blog_core.py` | 28 tests, no network. |
+| `test_sync_pipeline.py` | 10 tests for career aggregation, no network. |
 | `league_data.json` | The only place league IDs live. |
 | `firestore.rules` | Read-only for browsers; all writes denied. |
 | `requirements*.txt` | Split by intent: base (`requests`), `-firestore`, `-excel`. |
@@ -156,7 +157,7 @@ standings.
 - **Live-week capping is now active.** Live state is 2026 week 2, so 2026 is
   capped to week 1 complete while 2023-2025 fetch in full. This was dormant
   until 2026 was added.
-- **52 unit tests** (24 league + 28 blog), no network required.
+- **62 unit tests** (24 league + 28 blog + 10 pipeline), no network required.
 - **Live Firestore rules match `firestore.rules`** (read from the console
   2026-09-20): public read, all writes denied.
 - **The blog pipeline end to end**: a post in `blogs/` parses, lands in

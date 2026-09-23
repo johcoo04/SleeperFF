@@ -179,7 +179,7 @@
       <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>#</th><th>Owner</th><th>Career Scoreboard Pts</th><th>Career Avg</th><th>Total PF</th><th>Weeks Played</th></tr>
+            <tr><th>#</th><th>Owner</th><th>Career Scoreboard Pts</th><th>Career Avg</th><th>Total PF</th><th>2pt Wks</th><th>0pt Wks</th><th>Last %</th><th>Weeks Played</th></tr>
           </thead>
           <tbody id="careerBody"></tbody>
         </table>
@@ -187,6 +187,24 @@
       <div class="mt-5" style="max-width:100%; height:260px;">
         <canvas id="careerChart"></canvas>
       </div>
+    </div>
+
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide mb-1" style="color:var(--accent)">IF THE RULES HAD ALWAYS BEEN&hellip;</h2>
+      <p class="text-xs mb-4" style="color:var(--text-dim)">
+        Every week in league history rescored under each payout table.
+        Old (2023&ndash;24): ranks 1&ndash;2 = 2pt, 3&ndash;4 = 1pt, 5&ndash;6 = 0.
+        New (2025+): ranks 1&ndash;2 = 2pt, 3&ndash;5 = 1pt, 6 = 0.
+      </p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Owner</th><th>Actual</th><th>All Old Rules</th><th>All New Rules</th><th>Swing</th></tr>
+          </thead>
+          <tbody id="rulesBody"></tbody>
+        </table>
+      </div>
+      <p id="rulesEmptyMsg" class="text-sm text-center py-6 hidden" style="color:var(--text-dim)">Rescored totals aren't in this data yet &mdash; run the sync.</p>
     </div>
 
     <div class="panel px-4 py-4 sm:px-6 sm:py-5">
@@ -311,6 +329,8 @@ const els = {
   weekEmptyMsg: document.getElementById('weekEmptyMsg'),
 
   careerBody: document.getElementById('careerBody'),
+  rulesBody: document.getElementById('rulesBody'),
+  rulesEmptyMsg: document.getElementById('rulesEmptyMsg'),
   careerChartCanvas: document.getElementById('careerChart'),
   h2hOwnerA: document.getElementById('h2hOwnerA'),
   h2hOwnerB: document.getElementById('h2hOwnerB'),
@@ -488,10 +508,35 @@ function renderCareerLeaderboard(){
       <td>${o.career_scoreboard_points}</td>
       <td>${o.career_average_score.toFixed(2)}</td>
       <td>${o.career_total_pf.toFixed(2)}</td>
+      <td style="color:var(--green)">${o.two_point_weeks ?? '—'}</td>
+      <td style="color:var(--red)">${o.zero_point_weeks ?? '—'}</td>
+      <td>${o.last_place_rate != null ? o.last_place_rate.toFixed(1) + '%' : '—'}</td>
       <td>${o.weeks_played}</td>
     `;
     els.careerBody.appendChild(tr);
   });
+}
+
+function renderRulesComparison(){
+  // Older bundles (and any stale Firestore doc) predate these fields; show the
+  // empty note rather than a table of dashes.
+  const owners = careerData.owners.filter(o => o.career_points_new_rules != null);
+  els.rulesEmptyMsg.classList.toggle('hidden', owners.length > 0);
+  els.rulesBody.innerHTML = '';
+  [...owners]
+    .sort((a, b) => b.career_points_new_rules - a.career_points_new_rules)
+    .forEach(o => {
+      const swing = o.career_points_new_rules - o.career_points_old_rules;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(o.display_name || o.owner_id)}</td>
+        <td>${o.career_scoreboard_points}</td>
+        <td>${o.career_points_old_rules}</td>
+        <td>${o.career_points_new_rules}</td>
+        <td style="color:${swing >= 0 ? 'var(--green)' : 'var(--red)'}">${swing >= 0 ? '+' : ''}${swing.toFixed(0)}</td>
+      `;
+      els.rulesBody.appendChild(tr);
+    });
 }
 
 function renderCareerChart(){
@@ -726,6 +771,7 @@ function renderAll(){
   renderStandings();
   renderWeekBrowser();
   renderCareerLeaderboard();
+  renderRulesComparison();
   renderCareerChart();
   populateH2hSelectors();
   renderOutliers();
@@ -774,6 +820,7 @@ async function subscribeFirestore(){
   onSnapshot(doc(db, 'meta', 'career_summary'), (snap) => {
     careerData = snap.exists() ? snap.data() : { owners: [], h2h_matrix: {} };
     renderCareerLeaderboard();
+    renderRulesComparison();
     renderCareerChart();
     populateH2hSelectors();
     renderOutliers();

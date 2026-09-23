@@ -201,6 +201,54 @@ def build_career_and_trends(season_docs):
                         }
                 prev_score_by_owner[owner_id] = {"points": score, "week": week_number}
 
+    # Rule-table counterfactuals and per-tier counts get their own pass: both
+    # need a whole week at once (re-ranking the field), not one entry at a time.
+    #
+    # The league changed its payout table in 2025 — 2023-24 paid ranks 3-4 a
+    # point and zeroed 5-6, while 2025+ pays 3-5 and zeroes only 6. That makes
+    # raw career totals and raw zero counts non-comparable across eras: an
+    # owner who was bad early collected zeros at twice the rate for the same
+    # finishing position. Scoring every week in league history under each table
+    # separately is the only way to compare an owner to themselves.
+    tiers = defaultdict(lambda: {"two": 0, "one": 0, "zero": 0, "last": 0, "weeks": 0})
+    counterfactual = defaultdict(lambda: {"old": 0.0, "new": 0.0})
+    old_rules = core.points_for_rank_fn("2023")
+    new_rules = core.points_for_rank_fn("2025")
+
+    for season in sorted(season_docs):
+        for week in season_docs[season]["weeks"].values():
+            entries = [{"owner_id": e["owner_id"], "score": e["weekly_score"]}
+                       for e in week["results"] if e["owner_id"]]
+            if not entries:
+                continue
+            # Re-rank from the stored scores rather than trusting the stored
+            # rank, so the two tables see an identical field and ties are
+            # resolved by the same averaging rule in both.
+            for scored, key in ((core.score_week(entries, old_rules), "old"),
+                                (core.score_week(entries, new_rules), "new")):
+                for entry in scored:
+                    counterfactual[entry["owner_id"]][key] += entry["points_awarded"]
+
+            field_size = len(entries)
+            for entry in week["results"]:
+                owner_id = entry["owner_id"]
+                if not owner_id:
+                    continue
+                tier = tiers[owner_id]
+                tier["weeks"] += 1
+                awarded = entry["points_awarded"]
+                if awarded == 2:
+                    tier["two"] += 1
+                elif awarded == 0:
+                    tier["zero"] += 1
+                elif awarded > 0:
+                    tier["one"] += 1
+                # Last place is rank == field size, not a hardcoded 6, and it
+                # is the era-neutral companion to the zero count: exactly one
+                # owner finishes last every week regardless of the payout table.
+                if entry["weekly_rank"] == field_size:
+                    tier["last"] += 1
+
     # Head-to-head gets its own pass: points_against needs each week's full
     # score-by-owner map, which isn't available while accumulating careers.
     h2h_matrix = defaultdict(lambda: {"wins": 0, "losses": 0, "ties": 0,
@@ -236,6 +284,17 @@ def build_career_and_trends(season_docs):
             "best_single_week": record["best_single_week"],
             "worst_single_week": record["worst_single_week"],
             "largest_week_differential": record["largest_week_differential"],
+            # Per-tier counts and both counterfactual totals. Rounded because
+            # a tied week can pay a third of a point and float noise would
+            # otherwise surface in the UI.
+            "two_point_weeks": tiers[owner_id]["two"],
+            "one_point_weeks": tiers[owner_id]["one"],
+            "zero_point_weeks": tiers[owner_id]["zero"],
+            "last_place_weeks": tiers[owner_id]["last"],
+            "last_place_rate": round(
+                100 * tiers[owner_id]["last"] / max(tiers[owner_id]["weeks"], 1), 1),
+            "career_points_old_rules": round(counterfactual[owner_id]["old"], 2),
+            "career_points_new_rules": round(counterfactual[owner_id]["new"], 2),
         })
     owners.sort(key=lambda o: -o["career_scoreboard_points"])
 
