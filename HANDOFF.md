@@ -162,6 +162,16 @@ standings.
 - **The blog pipeline end to end**: a post in `blogs/` parses, lands in
   `league.json`, and carries every field `index.html` dereferences.
 
+### Deployed (2026-09-22)
+
+Raspberry Pi 4B (`jc-pi-home`, `192.168.1.23`), Debian 13, Python 3.13.
+nginx serving `/var/www/leaguehq`, enabled on boot. venv holds `requests` +
+`firebase-admin` only — no pandas on the Pi. 52 tests pass there. Key at
+`/home/pi/.config/sleeperff/serviceAccountKey.json` (600). Cron runs
+`sync.sh` Tuesdays 09:05 America/New_York, logging to `/home/pi/sync.log`.
+First real sync wrote both sinks and served back 110.9 KB over HTTP with the
+no-cache header intact.
+
 ### Not verified
 - The tie-breaker path (no real ties exist).
 - `index.html` rendering — the first browser load happened and "looks good",
@@ -236,15 +246,18 @@ week 3.
 Ordered by what blocks what. Items 1-2 were the two open *decisions*; both are
 now made and item 2 is built, so what's left is mostly deployment.
 
-### Blocking the Pi deploy
-1. **Port to the Raspberry Pi.** Full procedure in `DEPLOY.md`: nginx, weekly
-   cron running `--json-out /var/www/leaguehq/data`, service account key in
-   `~/.config/sleeperff/`, and **Cloudflare Tunnel** for outside access —
-   league members are on other networks, and a tunnel needs no port forwarding
-   and doesn't expose the home IP. Nothing else is waiting on this.
-2. **`sync.sh` doesn't copy `blogs/`** — it `cd`s into the repo, so posts come
-   from the git checkout. That means publishing a post is a `git pull` on the
-   Pi, or an edit in place. Worth deciding which before the first real post.
+### The Pi — deployed 2026-09-22, one piece left
+1. **Cloudflare Tunnel is not set up.** This is the only thing standing
+   between the current state and league members being able to load the page.
+   The Pi serves fine on the LAN (`http://192.168.1.23/`) but nothing outside
+   the house can reach it. The tunnel login is interactive (it opens a
+   browser), so it has to be run by hand on the Pi:
+   `cloudflared tunnel login`, create a tunnel, point it at
+   `http://localhost:80`, route a DNS hostname to it, install as a systemd
+   service. `cloudflared` is not installed yet.
+2. ~~`sync.sh` doesn't handle blogs.~~ **Done.** `sync.sh` is now in the repo
+   and starts with `git pull --ff-only origin main`, so publishing a post is
+   "push to main" and the Pi picks it up on the next run.
 
 ### Content
 3. **Write a real post.** `blogs/_example-2026-w01-recap.md` is a format
@@ -253,7 +266,12 @@ now made and item 2 is built, so what's left is mostly deployment.
    your own. Until then the tab still says "No featured post yet."
 
 ### Security / config hygiene
-4. **Restrict the Firebase web API key** in the Google Cloud console (API
+4. **Restrict the Firebase web API key** — *partially attempted 2026-09-22
+   and effectively still open.* All 25 available APIs were left ticked, which
+   is equivalent to unrestricted; verified by REST probe that nothing is
+   blocked. The half that actually matters is **Application restrictions ->
+   Websites**, still set to None, and it needs the Cloudflare Tunnel hostname
+   before it can be filled in. Do it right after the tunnel. Full detail: in the Google Cloud console (API
    restrictions + HTTP referrer allowlist). The key in `index.html` is a public
    client identifier and is safe in a public repo, but unrestricted it can be
    reused against this project's quota. Flagged in the code comment since day
@@ -276,9 +294,8 @@ now made and item 2 is built, so what's left is mostly deployment.
    covered by synthetic tests only. Nothing to do but wait for one.
 
 ### Housekeeping
-9. **Merge to `main`.** All work is on
-   `fix/owner-id-keying-and-live-verification`, pushed to GitHub. `main` is
-   untouched and is now many commits behind.
+9. ~~Merge to `main`.~~ **Done 2026-09-22.** Fast-forwarded 11 commits; the
+   Pi tracks `main`.
 10. **2027 and beyond:** add the league ID to `league_data.json`. Nothing else
     needs to change — season list, rule table, and week capping all follow.
 
