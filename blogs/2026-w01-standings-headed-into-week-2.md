@@ -23,7 +23,7 @@ author: Commissioner
 - League average was 161.22 with a 32.18 spread — the tightest opening week
   we've had. Four of six cleared 160
 
-- Kyle's 142.38 is the week's low and his 12th career zero-point week. Worth
+- Kyle's 142.38 is the week's low and his 11th career zero-point week. Worth
   noting he's second all-time in 2-point weeks with 21, so this one is noise
 
 - Jack opens 5th despite owning the best career résumé in the league: 24
