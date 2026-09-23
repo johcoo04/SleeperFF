@@ -132,6 +132,7 @@
     <button data-tab="career" class="tab-btn pb-2 pt-1 whitespace-nowrap">Career / Multi-Year</button>
     <button data-tab="trends" class="tab-btn pb-2 pt-1 whitespace-nowrap">League Trends</button>
     <button data-tab="history" class="tab-btn pb-2 pt-1 whitespace-nowrap">Score History</button>
+    <button data-tab="records" class="tab-btn pb-2 pt-1 whitespace-nowrap">Records</button>
     <button data-tab="blog" class="tab-btn pb-2 pt-1 whitespace-nowrap">Weekly Blog</button>
   </nav>
 
@@ -218,10 +219,6 @@
       <div id="h2hResult" class="text-sm" style="color:var(--text-dim)">Pick two owners to see their lifetime record.</div>
     </div>
 
-    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
-      <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide mb-4" style="color:var(--accent)">OUTLIER RECORDS</h2>
-      <div id="outlierGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
-    </div>
   </section>
 
   <!-- ===================== TAB: LEAGUE TRENDS ===================== -->
@@ -245,6 +242,60 @@
   </section>
 
   <!-- ===================== TAB: WEEKLY BLOG ===================== -->
+  <!-- ===================== TAB: RECORDS ===================== -->
+  <section id="tab-records" class="tab-panel mx-3 mt-4 sm:mx-6 space-y-4">
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide" style="color:var(--accent)">ALL-TIME HIGH SCORES</h2>
+        <select id="recordsCount" class="select-like">
+          <option value="10">Top 10</option>
+          <option value="25" selected>Top 25</option>
+          <option value="50">Top 50</option>
+        </select>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>#</th><th>Owner</th><th>Score</th><th>Season</th><th>Week</th><th>Rank</th></tr></thead>
+          <tbody id="recordsHighBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide mb-4" style="color:var(--accent)">ALL-TIME LOW SCORES</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>#</th><th>Owner</th><th>Score</th><th>Season</th><th>Week</th><th>Rank</th></tr></thead>
+          <tbody id="recordsLowBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide mb-1" style="color:var(--accent)">BIGGEST WEEK-TO-WEEK SWINGS</h2>
+      <p class="text-xs mb-4" style="color:var(--text-dim)">
+        Change from one week to the next, within a season. A season break isn't a swing, so 2024 Wk 17 &rarr; 2025 Wk 1 is never counted.
+      </p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>#</th><th>Owner</th><th>Swing</th><th>From</th><th>To</th><th>Season</th><th>Weeks</th></tr></thead>
+          <tbody id="recordsSwingBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel px-4 py-4 sm:px-6 sm:py-5">
+      <h2 class="font-display glow text-2xl sm:text-3xl tracking-wide mb-4" style="color:var(--accent)">PERSONAL BESTS &amp; WORSTS</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Owner</th><th>Best Week</th><th>When</th><th>Worst Week</th><th>When</th><th>Range</th></tr></thead>
+          <tbody id="recordsPersonalBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <p id="recordsEmptyMsg" class="text-sm text-center py-8 hidden" style="color:var(--text-dim)">No weeks recorded yet.</p>
+  </section>
+
   <!-- ===================== TAB: SCORE HISTORY ===================== -->
   <section id="tab-history" class="tab-panel mx-3 mt-4 sm:mx-6 space-y-4">
     <div class="panel px-4 py-4 sm:px-6 sm:py-5">
@@ -358,7 +409,12 @@ const els = {
   h2hOwnerA: document.getElementById('h2hOwnerA'),
   h2hOwnerB: document.getElementById('h2hOwnerB'),
   h2hResult: document.getElementById('h2hResult'),
-  outlierGrid: document.getElementById('outlierGrid'),
+  recordsCount: document.getElementById('recordsCount'),
+  recordsHighBody: document.getElementById('recordsHighBody'),
+  recordsLowBody: document.getElementById('recordsLowBody'),
+  recordsSwingBody: document.getElementById('recordsSwingBody'),
+  recordsPersonalBody: document.getElementById('recordsPersonalBody'),
+  recordsEmptyMsg: document.getElementById('recordsEmptyMsg'),
 
   trendsChartCanvas: document.getElementById('trendsChart'),
   trendsBody: document.getElementById('trendsBody'),
@@ -639,32 +695,97 @@ function renderH2h(){
 els.h2hOwnerA.addEventListener('change', renderH2h);
 els.h2hOwnerB.addEventListener('change', renderH2h);
 
-function renderOutliers(){
-  if(careerData.owners.length === 0){ els.outlierGrid.innerHTML = ''; return; }
-  const bestWeek = careerData.owners.reduce((best, o) =>
-    (!best || (o.best_single_week && o.best_single_week.points > best.points))
-      ? { ...o.best_single_week, owner: o.display_name || o.owner_id } : best, null);
-  const worstWeek = careerData.owners.reduce((worst, o) =>
-    (!worst || (o.worst_single_week && o.worst_single_week.points < worst.points))
-      ? { ...o.worst_single_week, owner: o.display_name || o.owner_id } : worst, null);
-  const biggestSwing = careerData.owners.reduce((swing, o) => {
-    const d = o.largest_week_differential;
-    if(!d) return swing;
-    if(!swing || Math.abs(d.delta) > Math.abs(swing.delta)) return { ...d, owner: o.display_name || o.owner_id };
-    return swing;
-  }, null);
+// =========================================================================
+// RECORDS TAB
+// =========================================================================
 
-  const card = (label, body) => `
-    <div class="panel px-4 py-3" style="border-color:var(--line)">
-      <div class="text-[11px] uppercase tracking-wider mb-1" style="color:var(--text-dim)">${label}</div>
-      <div class="text-sm">${body}</div>
-    </div>`;
-
-  els.outlierGrid.innerHTML =
-    (bestWeek ? card('All-Time High Week', `${escapeHtml(bestWeek.owner)} — <span style="color:var(--green)">${bestWeek.points.toFixed(1)}</span> (${bestWeek.season} Wk ${bestWeek.week})`) : '') +
-    (worstWeek ? card('All-Time Low Week', `${escapeHtml(worstWeek.owner)} — <span style="color:var(--red)">${worstWeek.points.toFixed(1)}</span> (${worstWeek.season} Wk ${worstWeek.week})`) : '') +
-    (biggestSwing ? card('Biggest Week-to-Week Swing', `${escapeHtml(biggestSwing.owner)} — <span style="color:${biggestSwing.delta >= 0 ? 'var(--green)' : 'var(--red)'}">${biggestSwing.delta >= 0 ? '+' : ''}${biggestSwing.delta.toFixed(1)}</span> (${biggestSwing.season} Wk ${biggestSwing.from_week}→${biggestSwing.to_week})`) : '');
+function everyOwnerWeek(){
+  // Flattened from the season documents rather than precomputed in the
+  // pipeline: the page already holds every week, so a top-50 list costs a
+  // sort instead of another array in the bundle.
+  const rows = [];
+  Object.keys(seasonDocs).forEach(year => {
+    const weeks = seasonDocs[year].weeks || {};
+    Object.keys(weeks).forEach(w => {
+      (weeks[w].results || []).forEach(r => rows.push({
+        owner: r.display_name || r.owner_id,
+        owner_id: r.owner_id,
+        score: r.weekly_score,
+        rank: r.weekly_rank,
+        season: year,
+        week: Number(w),
+      }));
+    });
+  });
+  return rows;
 }
+
+function allSwings(){
+  // Week-over-week change, within a season only. A season boundary is not a
+  // swing — 2024 Wk 17 to 2025 Wk 1 is an offseason, not a collapse.
+  const out = [];
+  Object.keys(seasonDocs).forEach(year => {
+    const weeks = seasonDocs[year].weeks || {};
+    const byOwner = new Map();
+    Object.keys(weeks).sort((a, b) => Number(a) - Number(b)).forEach(w => {
+      (weeks[w].results || []).forEach(r => {
+        const prev = byOwner.get(r.owner_id);
+        if(prev){
+          out.push({
+            owner: r.display_name || r.owner_id,
+            delta: r.weekly_score - prev.score,
+            from: prev.score, to: r.weekly_score,
+            from_week: prev.week, to_week: Number(w),
+            season: year,
+          });
+        }
+        byOwner.set(r.owner_id, { score: r.weekly_score, week: Number(w) });
+      });
+    });
+  });
+  return out;
+}
+
+function renderRecords(){
+  const rows = everyOwnerWeek();
+  els.recordsEmptyMsg.classList.toggle('hidden', rows.length > 0);
+  const limit = Number(els.recordsCount.value) || 25;
+
+  const scoreRow = (r, i) => `
+    <tr><td>#${i + 1}</td><td>${escapeHtml(r.owner)}</td>
+    <td>${r.score.toFixed(2)}</td><td>${r.season}</td><td>${r.week}</td><td>${r.rank}</td></tr>`;
+
+  els.recordsHighBody.innerHTML = [...rows]
+    .sort((a, b) => b.score - a.score).slice(0, limit).map(scoreRow).join('');
+  els.recordsLowBody.innerHTML = [...rows]
+    .sort((a, b) => a.score - b.score).slice(0, limit).map(scoreRow).join('');
+
+  els.recordsSwingBody.innerHTML = allSwings()
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    .slice(0, limit)
+    .map((sw, i) => `
+      <tr><td>#${i + 1}</td><td>${escapeHtml(sw.owner)}</td>
+      <td style="color:${sw.delta >= 0 ? 'var(--green)' : 'var(--red)'}">${sw.delta >= 0 ? '+' : ''}${sw.delta.toFixed(2)}</td>
+      <td>${sw.from.toFixed(2)}</td><td>${sw.to.toFixed(2)}</td>
+      <td>${sw.season}</td><td>${sw.from_week}&rarr;${sw.to_week}</td></tr>`)
+    .join('');
+
+  els.recordsPersonalBody.innerHTML = [...careerData.owners]
+    .sort((a, b) => (b.best_single_week?.points ?? 0) - (a.best_single_week?.points ?? 0))
+    .map(o => {
+      const b = o.best_single_week, w = o.worst_single_week;
+      const range = (b && w) ? (b.points - w.points).toFixed(2) : '—';
+      return `
+        <tr><td>${escapeHtml(o.display_name || o.owner_id)}</td>
+        <td style="color:var(--green)">${b ? b.points.toFixed(2) : '—'}</td>
+        <td style="color:var(--text-dim)">${b ? `${b.season} Wk ${b.week}` : '—'}</td>
+        <td style="color:var(--red)">${w ? w.points.toFixed(2) : '—'}</td>
+        <td style="color:var(--text-dim)">${w ? `${w.season} Wk ${w.week}` : '—'}</td>
+        <td>${range}</td></tr>`;
+    }).join('');
+}
+
+els.recordsCount.addEventListener('change', renderRecords);
 
 // =========================================================================
 // LEAGUE TRENDS TAB
@@ -887,7 +1008,7 @@ function renderAll(){
   renderRulesComparison();
   renderCareerChart();
   populateH2hSelectors();
-  renderOutliers();
+  renderRecords();
   renderTrendsTable();
   renderTrendsChart();
   populateHistorySeasons();
@@ -940,7 +1061,7 @@ async function subscribeFirestore(){
     renderRulesComparison();
     renderCareerChart();
     populateH2hSelectors();
-    renderOutliers();
+    renderRecords();
   }, (err) => console.error('meta/career_summary sync failed', err));
 
   onSnapshot(doc(db, 'meta', 'league_trends'), (snap) => {
