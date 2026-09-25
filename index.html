@@ -100,6 +100,17 @@
   .prose-blog a{ color: var(--accent2); text-decoration: underline; }
   .prose-blog code{ background: var(--panel-2); padding: 0.1em 0.4em; border-radius: 4px; font-size: 0.9em; }
   .prose-blog blockquote{ border-left: 3px solid var(--line); padding-left: 1em; color: var(--text-dim); margin: 0.8em 0; }
+  /* Phone photos are several thousand pixels wide; without this they blow the
+     panel out and force horizontal scrolling on the whole page. */
+  .prose-blog img{ max-width: 100%; height: auto; display: block; margin: 1em auto;
+                   border-radius: 8px; border: 1px solid var(--line); }
+  /* A markdown image alone in a paragraph renders as <p><img></p>; italic text
+     directly under it is the conventional caption, so style it as one. */
+  .prose-blog img + em, .prose-blog p > em:only-child{ display: block; text-align: center;
+                   font-size: 0.85em; color: var(--text-dim); margin-top: -0.4em; }
+  .prose-blog table{ width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.9em; }
+  .prose-blog th, .prose-blog td{ border: 1px solid var(--line); padding: 0.4em 0.6em; text-align: left; }
+  .prose-blog th{ color: var(--text-dim); font-weight: 600; }
 
   ::-webkit-scrollbar{ width: 8px; height: 8px; }
   ::-webkit-scrollbar-thumb{ background: var(--line); border-radius: 8px; }

@@ -30,4 +30,15 @@ venv/bin/python sync_pipeline.py --json-out "$WEBROOT/data"
 echo "== publish page =="
 cp index.html "$WEBROOT/index.html"
 
+# Blog images. They are files in the checkout like the posts themselves, and
+# they are NOT in league.json — the bundle carries markdown that references
+# them by relative path, so the bytes have to reach the web root separately.
+# Deliberately not a delete-mirror: an image dropped from a post shouldn't
+# vanish from under a link someone already shared.
+if [ -d blogs/images ]; then
+  mkdir -p "$WEBROOT/images"
+  cp -r blogs/images/. "$WEBROOT/images/"
+  echo "   published $(find blogs/images -type f | wc -l | tr -d ' ') image(s)"
+fi
+
 echo "== done $(date -Is) =="

@@ -49,3 +49,34 @@ nothing but text.
   both. The folder is the source of truth.
 - **The filename becomes the post's id.** Renaming a file and re-syncing
   creates a new post and removes the old one.
+
+## Images
+
+Two ways, both plain markdown.
+
+**Hosted elsewhere** — paste any public URL. Nothing to set up:
+
+```markdown
+![Danny's lineup](https://i.imgur.com/example.png)
+```
+
+**Hosted here** — drop the file in `blogs/images/` and reference it relative
+to the site root:
+
+```markdown
+![Week 2 carnage](images/danny-week2.png)
+
+*Danny, moments before the 104.58.*
+```
+
+`sync.sh` copies `blogs/images/` into the web root on every run, so publishing
+a picture is the same as publishing a post: commit it, push, and the Pi picks
+it up. Italic text on the line after an image is styled as a caption.
+
+Images are capped at the panel width automatically, so a 4000px phone photo
+is fine. They do live in git, though, so resize anything enormous before
+committing — the whole league is only ~190 KB of JSON and it'd be a shame for
+the repo to be 90% screenshots.
+
+Note the path is `images/...`, not `blogs/images/...` — the file is served
+from the site root, not from the folder it's authored in.
